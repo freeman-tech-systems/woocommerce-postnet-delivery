@@ -1,0 +1,33 @@
+version: '3.1'
+name: postnet_woocommerce
+
+services:
+
+  postnet_wordpress:
+    image: wordpress
+    restart: no
+    ports:
+      - 8080:80
+    environment:
+      WORDPRESS_DB_HOST: postnet_wordpress_db
+      WORDPRESS_DB_USER: exampleuser
+      WORDPRESS_DB_PASSWORD: examplepass
+      WORDPRESS_DB_NAME: postnet
+    volumes:
+      - postnet_wordpress:/var/www/html
+      - ../:/var/www/html/wp-content/plugins/woocommerce-postnet-delivery
+
+  postnet_wordpress_db:
+    image: mysql:5.7
+    restart: no
+    environment:
+      MYSQL_DATABASE: postnet
+      MYSQL_USER: exampleuser
+      MYSQL_PASSWORD: examplepass
+      MYSQL_RANDOM_ROOT_PASSWORD: '1'
+    volumes:
+      - postnet_wordpress_db:/var/lib/mysql
+
+volumes:
+  postnet_wordpress:
+  postnet_wordpress_db:
