@@ -11,16 +11,35 @@
  * WC tested up to: 8.2.1
  */
 
-add_action( 'before_woocommerce_init', function() {
-  if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
-    \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __FILE__, true );
-  }
-} );
+const POSTNET_SHIPPING_FREE = 'PostNet Free Shipping';
+const POSTNET_SHIPPING_STORE = 'PostNet to PostNet';
+const POSTNET_SHIPPING_EXPRESS = 'PostNet Express';
+const POSTNET_SHIPPING_ECONOMY = 'PostNet Economy';
 
-// Hook into the admin menu
+add_action('admin_enqueue_scripts', 'woocommerce_postnet_delivery_enqueue_scripts');
+add_action('admin_init', 'woocommerce_postnet_delivery_admin');
+add_action('admin_init', 'woocommerce_postnet_delivery_settings_init');
 add_action('admin_menu', 'woocommerce_postnet_delivery_settings_page');
+add_action('admin_notices', 'woocommerce_postnet_delivery_show_shipping_configured_notice');
+add_action('before_woocommerce_init', 'woocommerce_postnet_delivery_compatibility');
+add_action('woocommerce_admin_order_data_after_shipping_address', 'woocommerce_postnet_delivery_checkout_field_display_admin_order_meta', 10, 1);
+add_action('woocommerce_after_shipping_rate', 'woocommerce_postnet_delivery_checkout_field', 10, 1);
+add_action('woocommerce_checkout_process', 'woocommerce_postnet_delivery_validations');
+add_action('woocommerce_checkout_update_order_meta', 'woocommerce_postnet_delivery_checkout_field_update_order_meta');
+add_action('woocommerce_order_details_after_order_table', 'woocommerce_postnet_delivery_order_received_page');
+add_action('woocommerce_process_product_meta', 'woocommerce_postnet_delivery_save_product_fields');
+add_action('woocommerce_product_options_shipping', 'woocommerce_postnet_delivery_product_fields');
+add_action('wp_ajax_nopriv_woocommerce_postnet_delivery_stores', 'woocommerce_postnet_delivery_stores');
+add_action('wp_ajax_woocommerce_postnet_delivery_stores', 'woocommerce_postnet_delivery_stores');
 
-// Register settings
+add_filter('woocommerce_package_rates', 'woocommerce_postnet_delivery_custom_shipping_methods_logic', 10, 2);
+
+function woocommerce_postnet_delivery_compatibility() {
+  if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
+    \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', __FILE__, true);
+  }
+}
+
 function woocommerce_postnet_delivery_settings_init() {
   register_setting('woocommerce_postnet_delivery', 'woocommerce_postnet_delivery_options');
 
@@ -34,9 +53,6 @@ function woocommerce_postnet_delivery_settings_init() {
   // Repeat add_settings_field() as needed for your options here
 }
 
-add_action('admin_init', 'woocommerce_postnet_delivery_settings_init');
-
-// Settings page callback
 function woocommerce_postnet_delivery_settings_page() {
   add_submenu_page(
     'woocommerce', // Parent slug
@@ -48,7 +64,6 @@ function woocommerce_postnet_delivery_settings_page() {
   );
 }
 
-// Section callback
 function woocommerce_postnet_delivery_section_callback() {
   echo '<p>' . __('Set up delivery options for PostNet.', 'woocommerce-postnet-delivery') . '</p>';
 }
@@ -63,7 +78,6 @@ function woocommerce_postnet_delivery_service_types() {
   ];
 }
 
-// Settings page display callback
 function woocommerce_postnet_delivery_options_page() {
   // Check user capabilities
   if (!current_user_can('manage_options')) {
@@ -154,6 +168,7 @@ function woocommerce_postnet_delivery_options_page() {
       // Output save settings button
       submit_button('Save Settings');
       ?>
+      <a href="<?=esc_url(add_query_arg('action', 'configure_shipping_options'))?>" class="button">Configure PostNet Shipping</a>
       <a href="<?=esc_url(add_query_arg('action', 'export_products'))?>" class="button">Export Products CSV</a>
       <label for="postnet_delivery_csv" class="button">Import Products CSV</label>
     </form>
@@ -165,9 +180,6 @@ function woocommerce_postnet_delivery_options_page() {
   <?php
 }
 
-// Hook into the admin scripts action
-add_action('admin_enqueue_scripts', 'woocommerce_postnet_delivery_enqueue_scripts');
-
 function woocommerce_postnet_delivery_enqueue_scripts($hook) {
   // Check if we are on the settings page of our plugin
   if ($hook == 'woocommerce_page_woocommerce_postnet_delivery') {
@@ -176,13 +188,7 @@ function woocommerce_postnet_delivery_enqueue_scripts($hook) {
   }
 }
 
-add_action('admin_init', 'woocommerce_postnet_delivery_admin');
-
 function woocommerce_postnet_delivery_admin() {
-  if (!current_user_can('manage_options')) {
-    wp_die('You do not have sufficient permissions to access this page.');
-  }
-
   // Check if the export action has been triggered
   if (isset($_GET['action']) && $_GET['action'] === 'export_products') {
     woocommerce_postnet_delivery_export_products_csv();
@@ -191,6 +197,11 @@ function woocommerce_postnet_delivery_admin() {
   // Check if the import action has been triggered
   if (isset($_POST['action']) && $_POST['action'] === 'import_products' && !empty($_FILES['postnet_delivery_csv'])) {
     woocommerce_postnet_delivery_import_products_csv();
+  }
+  
+  // Configure shipping options
+  if (isset($_GET['action']) && $_GET['action'] === 'configure_shipping_options') {
+    woocommerce_postnet_delivery_configure_shipping_options();
   }
 }
 
@@ -308,8 +319,86 @@ function woocommerce_postnet_delivery_import_products_csv() {
   }
 }
 
-// Hook to add custom fields to product options shipping
-add_action('woocommerce_product_options_shipping', 'woocommerce_postnet_delivery_product_fields');
+function woocommerce_postnet_delivery_configure_shipping_options() {
+  $zone = woocommerce_postnet_delivery_get_zone();
+  
+  // Method IDs for the custom methods you're interested in
+  $required_methods = array(
+    POSTNET_SHIPPING_FREE=>'flat_rate',
+    POSTNET_SHIPPING_STORE=>'flat_rate',
+    POSTNET_SHIPPING_EXPRESS=>'flat_rate',
+    POSTNET_SHIPPING_ECONOMY=>'flat_rate',
+  );
+
+  // Get existing methods for the zone
+  $existing_methods = $zone->get_shipping_methods(true);
+
+  // Check if your required methods exist
+  foreach ($required_methods as $method_title=>$method_type) {
+    $found = false;
+    foreach ($existing_methods as $method) {
+      if ($method->title === $method_title) {
+        $found = true;
+        break;
+      }
+    }
+
+    // If not found, add the method
+    if (!$found) {
+      woocommerce_postnet_delivery_create_shipping_option($zone, $method_type, $method_title);
+    }
+  }
+  
+  wp_safe_redirect(add_query_arg('shipping_configured', '1', menu_page_url('woocommerce_postnet_delivery', false)));
+}
+
+function woocommerce_postnet_delivery_get_zone() {
+  $zone_name = 'South Africa';
+  $zone_order = 0;
+
+  // Check if the zone already exists
+  $existing_zones = WC_Shipping_Zones::get_zones();
+  foreach ($existing_zones as $zone) {
+    if ($zone['zone_name'] === $zone_name) {
+      return WC_Shipping_Zones::get_zone($zone['zone_id']);
+    }
+  }
+
+  if (!isset($zone_id)) {
+    // Zone does not exist, create it
+    $zone = new WC_Shipping_Zone();
+    $zone->set_zone_name($zone_name);
+    $zone->set_zone_order($zone_order);
+    $zone->add_location('ZA', 'country');
+    $zone->save();
+
+    return $zone;
+  }
+}
+
+function woocommerce_postnet_delivery_create_shipping_option($zone, $method_type, $method_title) {
+  // Instance ID for the new method -- set to 0 to auto-assign
+  $instance_id = $zone->add_shipping_method($method_type);
+  
+  $option_name = 'woocommerce_flat_rate_' . $instance_id . '_settings'; // Construct the option name
+
+  // Retrieve the existing settings
+  $instance_settings = get_option($option_name, array());
+
+  // Update specific settings
+  $instance_settings['title'] = $method_title; // Setting the title
+  $instance_settings['cost'] = '0.00'; // Setting the flat rate cost
+  $instance_settings['tax_status'] = 'taxable'; // Setting the tax status
+
+  // Save the updated settings back
+  update_option($option_name, $instance_settings);
+}
+
+function woocommerce_postnet_delivery_show_shipping_configured_notice() {
+  if (isset($_GET['shipping_configured']) && $_GET['shipping_configured'] == '1') {
+    // echo '<div class="notice notice-success is-dismissible"><p>' . __('Shipping options have been configured.', 'text-domain') . '</p></div>';
+  }
+}
 
 function woocommerce_postnet_delivery_product_fields() {
   global $post;
@@ -349,9 +438,6 @@ function woocommerce_postnet_delivery_product_fields() {
   echo '</div>';
 }
 
-// Hook to save custom fields data
-add_action('woocommerce_process_product_meta', 'woocommerce_postnet_delivery_save_product_fields');
-
 function woocommerce_postnet_delivery_save_product_fields($post_id) {
   // Get the enabled service types from the settings
   $options = get_option('woocommerce_postnet_delivery_options');
@@ -363,5 +449,158 @@ function woocommerce_postnet_delivery_save_product_fields($post_id) {
     if (isset($_POST[$field_id])) {
       update_post_meta($post_id, $field_id, wc_clean($_POST[$field_id]));
     }
+  }
+}
+
+function woocommerce_postnet_delivery_custom_shipping_methods_logic($rates, $package) {
+  // Calculate the PostNet fee
+  $postal_code = $package['destination']['postcode'];
+  $main_check = json_decode(file_get_contents('https://pnsa.restapis.co.za/public/is-main?postcode='.$postal_code));
+  $is_main = $main_check->main;
+  $subtotal = $package['cart_subtotal'];
+  $options = get_option('woocommerce_postnet_delivery_options');
+  $order_amount_threshold = isset($options['order_amount_threshold']) ? $options['order_amount_threshold'] : 0;
+  $postnet_to_postnet_fee = isset($options['postnet_to_postnet_fee']) ? $options['postnet_to_postnet_fee'] : 0;
+  $enabled_services = isset($options['service_type']) ? $options['service_type'] : array();
+  $free_shipping = $order_amount_threshold > 0 && $subtotal >= $order_amount_threshold;
+  
+  foreach ($rates as $rate_id => $rate) {
+    switch ($rate->label){
+      case POSTNET_SHIPPING_FREE:
+        if (!$free_shipping) unset($rates[$rate_id]);
+        break;
+      case POSTNET_SHIPPING_STORE:
+        if (!$free_shipping && in_array('postnet_to_postnet', $enabled_services)){
+          $rate->cost = $postnet_to_postnet_fee;
+        } else {
+          unset($rates[$rate_id]);
+        }
+        break;
+      case POSTNET_SHIPPING_EXPRESS:
+        if (!$free_shipping && $is_main && in_array('main_centre_express', $enabled_services)){
+          $rate->cost = woocommerce_postnet_delivery_service_fee($package, 'main_centre_express');
+        } else if (!$free_shipping && !$is_main && in_array('regional_centre_express', $enabled_services)){
+          $rate->cost = woocommerce_postnet_delivery_service_fee($package, 'regional_centre_express');
+        } else {
+          unset($rates[$rate_id]);
+        }
+        break;
+      case POSTNET_SHIPPING_ECONOMY:
+        if (!$free_shipping && $is_main && in_array('main_centre_economy', $enabled_services)){
+          $rate->cost = woocommerce_postnet_delivery_service_fee($package, 'main_centre_economy');
+        } else if (!$free_shipping && !$is_main && in_array('regional_centre_economy', $enabled_services)){
+          $rate->cost = woocommerce_postnet_delivery_service_fee($package, 'regional_centre_economy');
+        } else {
+          unset($rates[$rate_id]);
+        }
+        break;
+    }
+  }
+  
+  return $rates;
+}
+
+function woocommerce_postnet_delivery_service_fee($package, $service) {
+  $fee = 0;
+  
+  foreach ($package['contents'] as $item_id => $values) {
+    $value = get_post_meta($values['product_id'], '_'.$service.'_fee', true);
+    $fee += $value * $values['quantity'];
+  }
+  
+  return $fee;
+}
+
+function woocommerce_postnet_delivery_fetch_stores() {
+  $response = wp_remote_get('https://www.postnet.co.za/cart_store-json_list/');
+
+  if ( is_wp_error( $response ) ) {
+    wp_send_json_error( 'Error fetching stores' );
+    return;
+  }
+
+  $body = wp_remote_retrieve_body( $response );
+  return json_decode( $body );
+}
+
+function woocommerce_postnet_delivery_stores() {
+    $stores = woocommerce_postnet_delivery_fetch_stores();
+    
+    // Check if decoding was successful
+    if ( null === $stores ) {
+      wp_send_json_error( 'Error decoding stores data' );
+      return;
+    }
+
+    wp_send_json_success( $stores );
+}
+
+function woocommerce_postnet_delivery_checkout_field($rate) {
+  $chosen_methods = WC()->session->get( 'chosen_shipping_methods' );
+
+  // The chosen methods are stored in an array, one for each package. Most stores will only have one package.
+  $chosen_method = ! empty( $chosen_methods ) ? $chosen_methods[0] : '';
+
+  if ($rate->label != POSTNET_SHIPPING_STORE || $rate->id !== $chosen_method) return;
+  
+  $stores = woocommerce_postnet_delivery_fetch_stores();
+  
+  $options = array(
+    '' => 'Select a Store...'
+  );
+  
+  foreach ($stores as $store){
+    $options[$store->store_name] = $store->store_name;
+  }
+  
+  woocommerce_form_field( 'destination_store', array(
+    'type'          => 'select',
+    'required'      => true,
+    'class'         => array('my-field-class form-row-wide'),
+    'options'       => $options, // Pass the options array
+    ));
+  
+  echo '</div>';
+}
+
+function woocommerce_postnet_delivery_checkout_field_update_order_meta($order_id) {
+  if ( ! empty( $_POST['destination_store'] ) ) {
+    update_post_meta( $order_id, 'Destination Store', sanitize_text_field( $_POST['destination_store'] ) );
+  }
+}
+
+function woocommerce_postnet_delivery_checkout_field_display_admin_order_meta($order) {
+  echo '<p><strong>'.__('Destination Store').':</strong> ' . get_post_meta( $order->get_id(), 'Destination Store', true ) . '</p>';
+}
+
+function woocommerce_postnet_delivery_validations() {
+  $chosen_methods = WC()->session->get( 'chosen_shipping_methods' );
+  $chosen_method = ! empty( $chosen_methods ) ? $chosen_methods[0] : '';
+  
+  $zone = woocommerce_postnet_delivery_get_zone();
+  $shipping_methods = $zone->get_shipping_methods();
+  $instance_id = 0;
+  foreach ($shipping_methods as $method){
+    if ($method->title == POSTNET_SHIPPING_STORE){
+      $instance_id = $method->instance_id;
+      break;
+    }
+  }
+  
+  if ($chosen_method != 'flat_rate:'.$instance_id) return;
+  
+  if ( ! isset($_POST['destination_store']) || empty($_POST['destination_store']) ) {
+    wc_add_notice('<strong>Destination Store</strong> is a required field.', 'error' );
+  }
+}
+
+function woocommerce_postnet_delivery_order_received_page($order) {
+  // Get the custom field value
+  $field_value = get_post_meta( $order->get_id(), 'Destination Store', true );
+
+  // Check if there's a value for the custom field
+  if ( ! empty( $field_value ) ) {
+    // Display the custom field and its value
+    echo '<p><strong>Destination Store:</strong> ' . esc_html( $field_value ) . '</p>';
   }
 }

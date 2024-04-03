@@ -18,7 +18,7 @@ services:
       - ../:/var/www/html/wp-content/plugins/woocommerce-postnet-delivery
 
   postnet_wordpress_db:
-    image: mysql:5.7
+    image: mysql:8.2
     restart: no
     environment:
       MYSQL_DATABASE: postnet
