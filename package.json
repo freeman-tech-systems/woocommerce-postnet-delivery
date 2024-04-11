@@ -1,0 +1,12 @@
+{
+  "name": "woocommerce_postnet_delivery",
+  "version": "1.0.0",
+  "devDependencies": {
+    "@wordpress/scripts": "^27.4.0",
+    "@wordpress/i18n": "^4.53.0"
+  },
+  "scripts": {
+    "start": "wp-scripts start",
+    "build": "wp-scripts build"
+  }
+}
