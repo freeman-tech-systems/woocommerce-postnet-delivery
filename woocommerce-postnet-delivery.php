@@ -86,8 +86,12 @@ function woocommerce_postnet_delivery_options_page() {
 
   // Retrieve the plugin settings from the options table
   $options = get_option('woocommerce_postnet_delivery_options');
-  if (!$options['collection_type']) $options['collection_type'] = [];
-  if (!$options['service_type']) $options['service_type'] = [];
+  if (!$options){
+    $options = [
+      'service_type' => [],
+      'collection_type' => []
+    ];
+  }
   
   $stores = json_decode(file_get_contents('https://www.postnet.co.za/cart_store-json_list/'));
   $selected_store = isset($options['postnet_store']) ? esc_attr($options['postnet_store']) : '';
