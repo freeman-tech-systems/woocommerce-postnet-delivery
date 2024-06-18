@@ -514,7 +514,7 @@ function woocommerce_postnet_delivery_service_fee($package, $service) {
   
   foreach ($package['contents'] as $item_id => $values) {
     $value = get_post_meta($values['product_id'], '_'.$service.'_fee', true);
-    $fee += $value * $values['quantity'];
+    $fee += ($value ? $value : 0) * $values['quantity'];
   }
   
   return $fee;
