@@ -86,6 +86,9 @@ function woocommerce_postnet_delivery_options_page() {
 
   // Retrieve the plugin settings from the options table
   $options = get_option('woocommerce_postnet_delivery_options');
+  if (!$options['collection_type']) $options['collection_type'] = [];
+  if (!$options['service_type']) $options['service_type'] = [];
+  
   $stores = json_decode(file_get_contents('https://www.postnet.co.za/cart_store-json_list/'));
   $selected_store = isset($options['postnet_store']) ? esc_attr($options['postnet_store']) : '';
   ?>
@@ -110,7 +113,7 @@ function woocommerce_postnet_delivery_options_page() {
               foreach ($service_types as $service_key=>$service_name){
                 ?>
                 <label>
-                  <input type="checkbox" name="woocommerce_postnet_delivery_options[service_type][]" value="<?=$service_key?>" <?php checked(in_array($service_key, (array)($options['service_type'] ?? []))); ?> />
+                  <input type="checkbox" name="woocommerce_postnet_delivery_options[service_type][]" value="<?=$service_key?>" <?php checked(in_array($service_key, (array)($options['service_type']))); ?> />
                   <?=$service_name?>
                 </label><br />
                 <?php
@@ -135,9 +138,9 @@ function woocommerce_postnet_delivery_options_page() {
           <th scope="row"><label for="collection_type">Collection Type</label></th>
           <td>
             <select name="woocommerce_postnet_delivery_options[collection_type]">
-              <option value="always_collect" <?php selected($options['collection_type'] ?? [], 'always_collect'); ?>>Always Collect</option>
-              <option value="always_deliver" <?php selected($options['collection_type'] ?? [], 'always_deliver'); ?>>Always Deliver</option>
-              <option value="service_based" <?php selected($options['collection_type'] ?? [], 'service_based'); ?>>Service Based</option>
+              <option value="always_collect" <?php selected($options['collection_type'], 'always_collect'); ?>>Always Collect</option>
+              <option value="always_deliver" <?php selected($options['collection_type'], 'always_deliver'); ?>>Always Deliver</option>
+              <option value="service_based" <?php selected($options['collection_type'], 'service_based'); ?>>Service Based</option>
             </select>
           </td>
         </tr>
