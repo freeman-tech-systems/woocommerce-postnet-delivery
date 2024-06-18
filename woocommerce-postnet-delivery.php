@@ -464,8 +464,8 @@ function woocommerce_postnet_delivery_save_product_fields($post_id) {
 function woocommerce_postnet_delivery_custom_shipping_methods_logic($rates, $package) {
   // Calculate the PostNet fee
   $postal_code = $package['destination']['postcode'];
-  $main_check = json_decode(file_get_contents('https://pnsa.restapis.co.za/public/is-main?postcode='.$postal_code));
-  $is_main = $main_check->main;
+  $main_check = $postal_code ? json_decode(file_get_contents('https://pnsa.restapis.co.za/public/is-main?postcode='.$postal_code)) : null;
+  $is_main = $main_check ? $main_check->main : false;
   $subtotal = $package['cart_subtotal'];
   $options = get_option('woocommerce_postnet_delivery_options');
   $order_amount_threshold = isset($options['order_amount_threshold']) ? $options['order_amount_threshold'] : 0;
