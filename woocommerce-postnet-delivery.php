@@ -415,7 +415,7 @@ function woocommerce_postnet_delivery_product_fields() {
   $enabled_services = isset($options['service_type']) ? $options['service_type'] : array();
   $service_types = woocommerce_postnet_delivery_service_types();
   
-  if (!$enabled_services) return;
+  if (!$enabled_services || (count($enabled_services == 1 && $enabled_services[0] == 'postnet_to_postnet'))) return;
 
   echo '<div class="options_group">';
   echo '<hr />';
