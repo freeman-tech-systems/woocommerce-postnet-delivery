@@ -412,7 +412,7 @@ function woocommerce_postnet_delivery_product_fields() {
 
   // Get the enabled service types from the settings
   $options = get_option('woocommerce_postnet_delivery_options');
-  $enabled_services = isset($options['service_type']) ? $options['service_type'] : array();
+  $enabled_services = isset($options['service_type']) && is_array($options['service_type']) ? $options['service_type'] : array();
   $service_types = woocommerce_postnet_delivery_service_types();
   
   if (!$enabled_services || (count($enabled_services == 1 && $enabled_services[0] == 'postnet_to_postnet'))) return;
