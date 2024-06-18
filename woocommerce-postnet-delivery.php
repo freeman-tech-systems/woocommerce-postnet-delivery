@@ -89,7 +89,7 @@ function woocommerce_postnet_delivery_options_page() {
   if (!$options){
     $options = [
       'service_type' => [],
-      'collection_type' => []
+      'collection_type' => 'always_collect'
     ];
   }
   
