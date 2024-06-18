@@ -135,9 +135,9 @@ function woocommerce_postnet_delivery_options_page() {
           <th scope="row"><label for="collection_type">Collection Type</label></th>
           <td>
             <select name="woocommerce_postnet_delivery_options[collection_type]">
-              <option value="always_collect" <?php selected($options['collection_type'], 'always_collect'); ?>>Always Collect</option>
-              <option value="always_deliver" <?php selected($options['collection_type'], 'always_deliver'); ?>>Always Deliver</option>
-              <option value="service_based" <?php selected($options['collection_type'], 'service_based'); ?>>Service Based</option>
+              <option value="always_collect" <?php selected($options['collection_type'] ?? [], 'always_collect'); ?>>Always Collect</option>
+              <option value="always_deliver" <?php selected($options['collection_type'] ?? [], 'always_deliver'); ?>>Always Deliver</option>
+              <option value="service_based" <?php selected($options['collection_type'] ?? [], 'service_based'); ?>>Service Based</option>
             </select>
           </td>
         </tr>
