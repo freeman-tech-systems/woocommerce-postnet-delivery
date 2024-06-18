@@ -85,7 +85,7 @@ function woocommerce_postnet_delivery_options_page() {
   }
 
   // Retrieve the plugin settings from the options table
-  $options = get_option('woocommerce_postnet_delivery_options');
+  $options = get_option('woocommerce_postnet_delivery_options') ?? [];
   $stores = json_decode(file_get_contents('https://www.postnet.co.za/cart_store-json_list/'));
   $selected_store = isset($options['postnet_store']) ? esc_attr($options['postnet_store']) : '';
   ?>
