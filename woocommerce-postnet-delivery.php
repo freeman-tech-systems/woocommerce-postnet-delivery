@@ -85,7 +85,7 @@ function woocommerce_postnet_delivery_options_page() {
   }
 
   // Retrieve the plugin settings from the options table
-  $options = get_option('woocommerce_postnet_delivery_options') ?? [];
+  $options = get_option('woocommerce_postnet_delivery_options');
   $stores = json_decode(file_get_contents('https://www.postnet.co.za/cart_store-json_list/'));
   $selected_store = isset($options['postnet_store']) ? esc_attr($options['postnet_store']) : '';
   ?>
@@ -110,7 +110,7 @@ function woocommerce_postnet_delivery_options_page() {
               foreach ($service_types as $service_key=>$service_name){
                 ?>
                 <label>
-                  <input type="checkbox" name="woocommerce_postnet_delivery_options[service_type][]" value="<?=$service_key?>" <?php checked(in_array($service_key, (array)$options['service_type'])); ?> />
+                  <input type="checkbox" name="woocommerce_postnet_delivery_options[service_type][]" value="<?=$service_key?>" <?php checked(in_array($service_key, (array)($options['service_type'] ?? []))); ?> />
                   <?=$service_name?>
                 </label><br />
                 <?php
