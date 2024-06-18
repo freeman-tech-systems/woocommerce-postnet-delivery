@@ -410,14 +410,16 @@ function woocommerce_postnet_delivery_show_shipping_configured_notice() {
 function woocommerce_postnet_delivery_product_fields() {
   global $post;
 
-  echo '<div class="options_group">';
-  echo '<hr />';
-  echo '<p><strong>PostNet Delivery Fees</strong></p>';
-
   // Get the enabled service types from the settings
   $options = get_option('woocommerce_postnet_delivery_options');
   $enabled_services = isset($options['service_type']) ? $options['service_type'] : array();
   $service_types = woocommerce_postnet_delivery_service_types();
+  
+  if (!$enabled_services) return;
+
+  echo '<div class="options_group">';
+  echo '<hr />';
+  echo '<p><strong>PostNet Delivery Fees</strong></p>';
 
   // For each enabled service, add a corresponding field
   foreach ($enabled_services as $service) {
