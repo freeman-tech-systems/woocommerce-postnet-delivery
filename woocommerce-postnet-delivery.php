@@ -29,6 +29,7 @@ add_action('woocommerce_checkout_update_order_meta', 'woocommerce_postnet_delive
 add_action('woocommerce_order_details_after_order_table', 'woocommerce_postnet_delivery_order_received_page');
 add_action('woocommerce_process_product_meta', 'woocommerce_postnet_delivery_save_product_fields');
 add_action('woocommerce_product_options_shipping', 'woocommerce_postnet_delivery_product_fields');
+add_action('woocommerce_thankyou', 'woocommerce_postnet_delivery_collection_notification', 10, 1);
 add_action('wp_ajax_nopriv_woocommerce_postnet_delivery_stores', 'woocommerce_postnet_delivery_stores');
 add_action('wp_ajax_woocommerce_postnet_delivery_stores', 'woocommerce_postnet_delivery_stores');
 
@@ -65,7 +66,7 @@ function woocommerce_postnet_delivery_settings_page() {
 }
 
 function woocommerce_postnet_delivery_section_callback() {
-  echo '<p>' . __('Set up delivery options for PostNet.', 'woocommerce-postnet-delivery') . '</p>';
+  echo '<p>' . __('Set up delivery options for PostNet.', 'woocommerce-postnet-delivery') . ' <a href="https://www.postnet.co.za/shopify-app-info/" target="_blank">Setup and Usage Instructions</a></p>';
 }
 
 function woocommerce_postnet_delivery_service_types() {
@@ -129,13 +130,13 @@ function woocommerce_postnet_delivery_options_page() {
         <tr>
           <th scope="row"><label for="postnet_to_postnet_fee">PostNet to PostNet Delivery Fee</label></th>
           <td>
-            <input type="number" name="woocommerce_postnet_delivery_options[postnet_to_postnet_fee]" value="<?php echo isset($options['postnet_to_postnet_fee']) ? esc_attr($options['postnet_to_postnet_fee']) : ''; ?>" />
+            <input type="number" name="woocommerce_postnet_delivery_options[postnet_to_postnet_fee]" value="<?php echo isset($options['postnet_to_postnet_fee']) ? esc_attr($options['postnet_to_postnet_fee']) : ''; ?>" required />
           </td>
         </tr>
         <tr>
           <th scope="row"><label for="order_amount_threshold">Order Amount Threshold</label></th>
           <td>
-            <input type="number" name="woocommerce_postnet_delivery_options[order_amount_threshold]" value="<?php echo isset($options['order_amount_threshold']) ? esc_attr($options['order_amount_threshold']) : ''; ?>" />
+            <input type="number" name="woocommerce_postnet_delivery_options[order_amount_threshold]" value="<?php echo isset($options['order_amount_threshold']) ? esc_attr($options['order_amount_threshold']) : ''; ?>" required />
           </td>
         </tr>
         <tr>
@@ -151,7 +152,7 @@ function woocommerce_postnet_delivery_options_page() {
         <tr>
           <th scope="row"><label for="postnet_store">PostNet Store</label></th>
           <td>
-            <select name="woocommerce_postnet_delivery_options[postnet_store]" id="postnet_store">
+            <select name="woocommerce_postnet_delivery_options[postnet_store]" id="postnet_store" required>
               <option value=''>Select...</option>
               <?php
               $selected_store = isset($options['postnet_store']) ? esc_attr($options['postnet_store']) : '';
@@ -163,12 +164,17 @@ function woocommerce_postnet_delivery_options_page() {
           </td>
         </tr>
         <tr>
-          <th scope="row"><label for="postnet_store_email">PostNet Store Email</label></th>
+          <th scope="row"><label for="postnet_api_key">API Key</label></th>
           <td>
-            <input type="text" name="woocommerce_postnet_delivery_options[postnet_store_email]" id="postnet_store_email" style="width:300px;" value="<?php echo isset($options['postnet_store_email']) ? esc_attr($options['postnet_store_email']) : ''; ?>" readonly />
+            <input type="text" name="woocommerce_postnet_delivery_options[postnet_api_key]" id="postnet_api_key" style="width:300px;" value="<?php echo isset($options['postnet_api_key']) ? esc_attr($options['postnet_api_key']) : ''; ?>" required />
           </td>
         </tr>
-        <!-- Add other settings as necessary -->
+        <tr>
+          <th scope="row"><label for="postnet_api_passcode">Passcode</label></th>
+          <td>
+            <input type="text" name="woocommerce_postnet_delivery_options[postnet_api_passcode]" id="postnet_api_passcode" style="width:300px;" value="<?php echo isset($options['postnet_api_passcode']) ? esc_attr($options['postnet_api_passcode']) : ''; ?>" required />
+          </td>
+        </tr>
       </table>
       
       <?php
@@ -521,7 +527,17 @@ function woocommerce_postnet_delivery_service_fee($package, $service) {
 }
 
 function woocommerce_postnet_delivery_fetch_stores() {
-  $response = wp_remote_get('https://www.postnet.co.za/cart_store-json_list/');
+  $address_details = array_filter([
+    WC()->customer->get_shipping_address(),
+    WC()->customer->get_shipping_address_2(),
+    WC()->customer->get_shipping_city(),
+    WC()->customer->get_shipping_state(),
+    WC()->customer->get_shipping_postcode()
+  ]);
+  
+  $address = implode(', ', array_filter($address_details));
+  
+  $response = wp_remote_get('https://postnet.co.za/courier_package-calculate/?data%5Baddress%5D='.urlencode($address));
 
   if ( is_wp_error( $response ) ) {
     wp_send_json_error( 'Error fetching stores' );
@@ -551,7 +567,6 @@ function woocommerce_postnet_delivery_checkout_field($rate) {
   $chosen_method = ! empty( $chosen_methods ) ? $chosen_methods[0] : '';
 
   if ($rate->label != POSTNET_SHIPPING_STORE || $rate->id !== $chosen_method) return;
-  
   $stores = woocommerce_postnet_delivery_fetch_stores();
   
   $options = array(
@@ -559,7 +574,7 @@ function woocommerce_postnet_delivery_checkout_field($rate) {
   );
   
   foreach ($stores as $store){
-    $options[$store->store_name] = $store->store_name;
+    $options[json_encode([$store->code, $store->name])] = $store->name;
   }
   
   woocommerce_form_field( 'destination_store', array(
@@ -579,7 +594,8 @@ function woocommerce_postnet_delivery_checkout_field_update_order_meta($order_id
 }
 
 function woocommerce_postnet_delivery_checkout_field_display_admin_order_meta($order) {
-  echo '<p><strong>'.__('Destination Store').':</strong> ' . get_post_meta( $order->get_id(), 'Destination Store', true ) . '</p>';
+  $store = json_decode(get_post_meta( $order->get_id(), 'Destination Store', true ));
+  echo '<p><strong>'.__('Destination Store').':</strong> ' . $store[1] . '</p>';
 }
 
 function woocommerce_postnet_delivery_validations() {
@@ -604,12 +620,137 @@ function woocommerce_postnet_delivery_validations() {
 }
 
 function woocommerce_postnet_delivery_order_received_page($order) {
-  // Get the custom field value
-  $field_value = get_post_meta( $order->get_id(), 'Destination Store', true );
+  $destination_store = get_post_meta( $order->get_id(), 'Destination Store', true );
+  if ( ! empty( $destination_store ) ) {
+    $store = json_decode($destination_store);
+    echo '<p><strong>Destination Store:</strong> ' . esc_html( $store[1] ) . '</p>';
+  }
+  
+  $waybill_number = get_post_meta( $order->get_id(), 'Waybill Number', true );
+  if ( ! empty( $waybill_number ) ) {
+    echo '<p><strong>Waybill Number:</strong> ' . esc_html( $waybill_number ) . '</p>';
+  }
+  
+  $tracking_url = get_post_meta( $order->get_id(), 'Tracking URL', true );
+  if ( ! empty( $tracking_url ) ) {
+    echo '<p><strong>Tracking URL:</strong> <a href="'.$tracking_url .'" target="_blank">' . esc_html( $tracking_url ) . '</a></p>';
+  }
+}
 
-  // Check if there's a value for the custom field
-  if ( ! empty( $field_value ) ) {
-    // Display the custom field and its value
-    echo '<p><strong>Destination Store:</strong> ' . esc_html( $field_value ) . '</p>';
+function woocommerce_postnet_delivery_collection_notification($order_id){
+  if (!$order_id) return;
+  
+  // Get an instance of the WC_Order object
+  $order = wc_get_order($order_id);
+  
+  // Get delivery options
+  $options = get_option('woocommerce_postnet_delivery_options');
+  $postal_code = $order->get_shipping_postcode();
+  $main_check = $postal_code ? json_decode(file_get_contents('https://pnsa.restapis.co.za/public/is-main?postcode='.$postal_code)) : null;
+  $is_main = $main_check ? $main_check->main : false;
+  $chosen_methods = WC()->session->get( 'chosen_shipping_methods' );
+  $chosen_method = ! empty( $chosen_methods ) ? $chosen_methods[0] : '';
+  
+  if (empty($chosen_method)) return;
+  
+  $rate = null;
+  $zone = woocommerce_postnet_delivery_get_zone();
+  $shipping_methods = $zone->get_shipping_methods();
+  foreach ($shipping_methods as $method) {
+    // Check if method instance ID matches the chosen method ID
+    if ($method->id . ':' . $method->instance_id == $chosen_method) {
+      $rate = $method;
+    }
+  }
+  
+  if (!$rate) return;
+  
+  $service_type = ($is_main ? 'main' : 'regional').'_centre_';
+  $destination_store = json_decode(get_post_meta( $order_id, 'Destination Store', true ));
+  
+  switch ($rate->title){
+    case POSTNET_SHIPPING_FREE:
+    case POSTNET_SHIPPING_EXPRESS:
+      $service_type .= 'express';
+      break;
+    case POSTNET_SHIPPING_STORE:
+      $service_type = 'postnet_to_postnet';
+      break;
+    case POSTNET_SHIPPING_ECONOMY:
+      $service_type .= 'economy';
+      break;
+    default:
+      return;
+  }
+  
+  // Define the data to send
+  $data = [
+    'online_store_name' => get_bloginfo('name'),
+    'collection_type' => $options['collection_type'],
+    'service_type' => $service_type,
+    'origin_store' => $options['postnet_store'],
+    'destination_store' => $destination_store ? $destination_store[0] : ''
+    ,
+    'receiver_street_address' => $order->get_shipping_address_1(),
+    'receiver_suburb' => $order->get_shipping_city(),
+    'receiver_postal_code' => $order->get_shipping_postcode(),
+    'receiver_name' => $order->get_formatted_shipping_full_name(),
+    'receiver_contact_person' => $order->get_billing_first_name(),
+    'receiver_contact_number' => $order->get_billing_phone(),
+    'order_number' => $order->get_order_number(),
+    'order_total' => (float) $order->get_total(),
+    'order_items' => []
+  ];
+  
+  // Get the order items
+  foreach ($order->get_items() as $item_id => $item) {
+    $product = $item->get_product();
+    $data['order_items'][] = [
+      'product_id' => (string)$product->get_id(),
+      'description' => $product->get_name(),
+      'qty' => $item->get_quantity(),
+      'price' => (float) $item->get_total(),
+      'weight' => (float) $product->get_weight(),
+      'length' => (float) $product->get_length(),
+      'width' => (float) $product->get_width(),
+      'height' => (float) $product->get_height(),
+    ];
+  }
+  
+  // API URL
+  $url = 'https://www.postnet.co.za/postnet_api-process_plugin_order';
+  
+  // Basic Authentication
+  $username = $options['postnet_api_key'];
+  $password = $options['postnet_api_passcode'];
+  $auth = base64_encode("$username:$password");
+  
+  // Setup request headers
+  $headers = [
+    'Content-Type' => 'application/json',
+    'Authorization' => 'Basic ' . $auth
+  ];
+  
+  // Send the request
+  $response = wp_remote_post($url, [
+    'method' => 'POST',
+    'headers' => $headers,
+    'body' => json_encode($data),
+    'timeout' => 45,
+    'sslverify' => false
+  ]);
+  
+  // Handle the response
+  if (is_wp_error($response)) {
+    error_log('Error in API request: ' . $response->get_error_message());
+  } else {
+    $response_body = wp_remote_retrieve_body($response);
+    $response = json_decode($response_body);
+    if (isset($response->success) && $response->success){
+      update_post_meta( $order_id, 'Waybill Number', sanitize_text_field( $response->waybill_number ) );
+      update_post_meta( $order_id, 'Tracking URL', sanitize_text_field( $response->tracking_url ) );
+    } else {
+      error_log('API Response: ' . $response_body);
+    }
   }
 }
