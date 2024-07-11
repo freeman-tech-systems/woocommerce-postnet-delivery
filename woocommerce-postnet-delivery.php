@@ -66,7 +66,7 @@ function woocommerce_postnet_delivery_settings_page() {
 }
 
 function woocommerce_postnet_delivery_section_callback() {
-  echo '<p>' . __('Set up delivery options for PostNet.', 'woocommerce-postnet-delivery') . ' <a href="https://www.postnet.co.za/shopify-app-info/" target="_blank">Setup and Usage Instructions</a></p>';
+  echo '<p>' . __('Set up delivery options for PostNet.', 'woocommerce-postnet-delivery') . ' <a href="https://www.postnet.co.za/shopify-app-info" target="_blank">Setup and Usage Instructions</a></p>';
 }
 
 function woocommerce_postnet_delivery_service_types() {
