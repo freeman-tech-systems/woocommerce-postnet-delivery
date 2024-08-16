@@ -635,6 +635,11 @@ function woocommerce_postnet_delivery_order_received_page($order) {
   if ( ! empty( $tracking_url ) ) {
     echo '<p><strong>Tracking URL:</strong> <a href="'.$tracking_url .'" target="_blank">' . esc_html( $tracking_url ) . '</a></p>';
   }
+  
+  $label_print = get_post_meta( $order->get_id(), 'Label Print', true );
+  if ( ! empty( $label_print ) ) {
+    echo '<p><strong>Label Print:</strong> <a href="'.$label_print .'" target="_blank">' . esc_html( $label_print ) . '</a></p>';
+  }
 }
 
 function woocommerce_postnet_delivery_collection_notification($order_id){
@@ -749,6 +754,7 @@ function woocommerce_postnet_delivery_collection_notification($order_id){
     if (isset($response->success) && $response->success){
       update_post_meta( $order_id, 'Waybill Number', sanitize_text_field( $response->waybill_number ) );
       update_post_meta( $order_id, 'Tracking URL', sanitize_text_field( $response->tracking_url ) );
+      update_post_meta( $order_id, 'Label Print', sanitize_text_field( $response->label_print ) );
     } else {
       error_log('API Response: ' . $response_body);
     }
