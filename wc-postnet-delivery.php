@@ -3,7 +3,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
 
 /**
  * Plugin Name: Delivery Options For PostNet
- * Plugin URI: https://github.com/freeman-tech-systems/wc-postnet-delivery
+ * Plugin URI: https://github.com/freeman-tech-systems/woocommerce-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
  * Version: 1.0.0
  * Author: Freeman Tech Systems

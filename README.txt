@@ -33,7 +33,7 @@ By using this plugin, you agree to PostNet's terms of service and privacy policy
 * Customizable: Modify the shipping methods according to your store's needs.
 
 == Installation ==
-1. Download the plugin zip file from the [releases page](https://github.com/yourusername/woocommerce-postnet-delivery/releases).
+1. Download the plugin zip file from the [releases page](https://github.com/freeman-tech-systems/woocommerce-postnet-delivery/releases).
 2. In your WordPress admin dashboard, go to Plugins > Add New > Upload Plugin.
 3. Choose the downloaded zip file and click Install Now.
 4. Activate the plugin through the Plugins menu in WordPress.
