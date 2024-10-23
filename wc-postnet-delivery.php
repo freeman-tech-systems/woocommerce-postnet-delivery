@@ -1,6 +1,8 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
+
 /**
- * Plugin Name: PostNet Delivery For WooCommerce
+ * Plugin Name: Delivery Options For PostNet
  * Plugin URI: https://github.com/freeman-tech-systems/wc-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
  * Version: 1.0.0
@@ -46,7 +48,7 @@ function wc_postnet_delivery_settings_init() {
 
   add_settings_section(
     'wc_postnet_delivery_section',
-    __('PostNet Delivery Settings', 'wc-postnet-delivery'),
+    __('PostNet Delivery Settings', 'delivery-options-postnet-woocommerce'), // Updated text domain
     'wc_postnet_delivery_section_callback',
     'wc_postnet_delivery'
   );
@@ -64,7 +66,7 @@ function wc_postnet_delivery_settings_page() {
 }
 
 function wc_postnet_delivery_section_callback() {
-  echo '<p>' . esc_html__('Set up delivery options for PostNet.', 'wc-postnet-delivery') . ' <a href="' . esc_url('https://www.postnet.co.za/woocommerce-app-info') . '" target="_blank">Setup and Usage Instructions</a></p>';
+  echo '<p>' . esc_html__('Set up delivery options for PostNet.', 'delivery-options-postnet-woocommerce') . ' <a href="' . esc_url('https://www.postnet.co.za/woocommerce-app-info') . '" target="_blank">Setup and Usage Instructions</a></p>';
 }
 
 function wc_postnet_delivery_service_types() {
@@ -117,7 +119,7 @@ function wc_postnet_delivery_options_page() {
       ?>
       <table class="form-table">
         <tr>
-          <th scope="row"><label for="service_type"><?php echo __('Service Type', 'wc-postnet-delivery'); ?></label></th>
+          <th scope="row"><label for="service_type"><?php echo esc_html__('Service Type', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
             <fieldset>
               <?php
@@ -125,7 +127,7 @@ function wc_postnet_delivery_options_page() {
               foreach ($service_types as $service_key=>$service_name){
                 ?>
                 <label>
-                  <input type="checkbox" name="wc_postnet_delivery_options[service_type][]" value="<?php echo esc_html($service_key); ?>" <?php checked(in_array($service_key, (array)($options['service_type']))); ?> />
+                  <input type="checkbox" name="wc_postnet_delivery_options[service_type][]" value="<?php echo esc_attr($service_key); ?>" <?php checked(in_array($service_key, (array)($options['service_type']))); ?> />
                   <?php echo esc_html($service_name); ?>
                 </label><br />
                 <?php
@@ -135,32 +137,32 @@ function wc_postnet_delivery_options_page() {
           </td>
         </tr>
         <tr>
-          <th scope="row"><label for="postnet_to_postnet_fee"><?php echo __('PostNet to PostNet Delivery Fee', 'wc-postnet-delivery'); ?></label></th>
+          <th scope="row"><label for="postnet_to_postnet_fee"><?php echo esc_html__('PostNet to PostNet Delivery Fee', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
-            <input type="number" name="wc_postnet_delivery_options[postnet_to_postnet_fee]" value="<?php echo isset($options['postnet_to_postnet_fee']) ? esc_attr($options['postnet_to_postnet_fee']) : ''; ?>" required />
+            <input type="number" name="wc_postnet_delivery_options[postnet_to_postnet_fee]" value="<?php echo esc_attr(isset($options['postnet_to_postnet_fee']) ? $options['postnet_to_postnet_fee'] : ''); ?>" required />
           </td>
         </tr>
         <tr>
-          <th scope="row"><label for="order_amount_threshold"><?php echo __('Order Amount Threshold', 'wc-postnet-delivery'); ?></label></th>
+          <th scope="row"><label for="order_amount_threshold"><?php echo esc_html__('Order Amount Threshold', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
-            <input type="number" name="wc_postnet_delivery_options[order_amount_threshold]" value="<?php echo isset($options['order_amount_threshold']) ? esc_attr($options['order_amount_threshold']) : ''; ?>" required />
+            <input type="number" name="wc_postnet_delivery_options[order_amount_threshold]" value="<?php echo esc_attr(isset($options['order_amount_threshold']) ? $options['order_amount_threshold'] : ''); ?>" required />
           </td>
         </tr>
         <tr>
-          <th scope="row"><label for="collection_type"><?php echo __('Collection Type', 'wc-postnet-delivery'); ?></label></th>
+          <th scope="row"><label for="collection_type"><?php echo esc_html__('Collection Type', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
             <select name="wc_postnet_delivery_options[collection_type]">
-              <option value="always_collect" <?php selected($options['collection_type'], 'always_collect'); ?>><?php echo __('Always Collect', 'wc-postnet-delivery'); ?></option>
-              <option value="always_deliver" <?php selected($options['collection_type'], 'always_deliver'); ?>><?php echo __('Always Deliver', 'wc-postnet-delivery'); ?></option>
-              <option value="service_based" <?php selected($options['collection_type'], 'service_based'); ?>><?php echo __('Service Based', 'wc-postnet-delivery'); ?></option>
+              <option value="always_collect" <?php selected($options['collection_type'], 'always_collect'); ?>><?php echo esc_html__('Always Collect', 'delivery-options-postnet-woocommerce'); ?></option>
+              <option value="always_deliver" <?php selected($options['collection_type'], 'always_deliver'); ?>><?php echo esc_html__('Always Deliver', 'delivery-options-postnet-woocommerce'); ?></option>
+              <option value="service_based" <?php selected($options['collection_type'], 'service_based'); ?>><?php echo esc_html__('Service Based', 'delivery-options-postnet-woocommerce'); ?></option>
             </select>
           </td>
         </tr>
         <tr>
-          <th scope="row"><label for="postnet_store">PostNet Store</label></th>
+          <th scope="row"><label for="postnet_store"><?php echo esc_html__('PostNet Store', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
             <select name="wc_postnet_delivery_options[postnet_store]" id="postnet_store" required>
-              <option value=''><?php echo __('Select...', 'wc-postnet-delivery'); ?></option>
+              <option value=''><?php echo esc_html__('Select...', 'delivery-options-postnet-woocommerce'); ?></option>
               <?php
               $selected_store = isset($options['postnet_store']) ? esc_attr($options['postnet_store']) : '';
               foreach ($stores as $store){
@@ -171,28 +173,28 @@ function wc_postnet_delivery_options_page() {
           </td>
         </tr>
         <tr>
-          <th scope="row"><label for="postnet_api_key"><?php echo __('API Key', 'wc-postnet-delivery'); ?></label></th>
+          <th scope="row"><label for="postnet_api_key"><?php echo esc_html__('API Key', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
-            <input type="text" name="wc_postnet_delivery_options[postnet_api_key]" id="postnet_api_key" style="width:300px;" value="<?php echo isset($options['postnet_api_key']) ? esc_attr($options['postnet_api_key']) : ''; ?>" required />
+            <input type="text" name="wc_postnet_delivery_options[postnet_api_key]" id="postnet_api_key" style="width:300px;" value="<?php echo esc_attr(isset($options['postnet_api_key']) ? $options['postnet_api_key'] : ''); ?>" required />
           </td>
         </tr>
         <tr>
-          <th scope="row"><label for="postnet_api_passcode"><?php echo __('Passphrase', 'wc-postnet-delivery'); ?></label></th>
+          <th scope="row"><label for="postnet_api_passcode"><?php echo esc_html__('Passphrase', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
-            <input type="text" name="wc_postnet_delivery_options[postnet_api_passcode]" id="postnet_api_passcode" style="width:300px;" value="<?php echo isset($options['postnet_api_passcode']) ? esc_attr($options['postnet_api_passcode']) : ''; ?>" required />
+            <input type="text" name="wc_postnet_delivery_options[postnet_api_passcode]" id="postnet_api_passcode" style="width:300px;" value="<?php echo esc_attr(isset($options['postnet_api_passcode']) ? $options['postnet_api_passcode'] : ''); ?>" required />
           </td>
         </tr>
       </table>
       
       <?php
       // Output save settings button
-      submit_button('Save Settings');
+      submit_button(esc_html__('Save Settings', 'delivery-options-postnet-woocommerce'));
       $configure_nonce = wp_create_nonce('configure_shipping_options_nonce');
       $export_nonce = wp_create_nonce('export_products_nonce');
       ?>
-      <a href="<?php echo esc_url(add_query_arg(['action' => 'configure_shipping_options', '_wpnonce' => $configure_nonce])); ?>" class="button"><?php echo __('Configure PostNet Shipping', 'wc-postnet-delivery'); ?></a>
-      <a href="<?php echo esc_url(add_query_arg(['action' => 'export_products', '_wpnonce' => $export_nonce])); ?>" class="button"><?php echo __('Export Products CSV', 'wc-postnet-delivery'); ?></a>
-      <label for="postnet_delivery_csv" class="button"><?php echo __('Import Products CSV', 'wc-postnet-delivery'); ?></label>
+      <a href="<?php echo esc_url(add_query_arg(['action' => 'configure_shipping_options', '_wpnonce' => $configure_nonce])); ?>" class="button"><?php echo esc_html__('Configure PostNet Shipping', 'delivery-options-postnet-woocommerce'); ?></a>
+      <a href="<?php echo esc_url(add_query_arg(['action' => 'export_products', '_wpnonce' => $export_nonce])); ?>" class="button"><?php echo esc_html__('Export Products CSV', 'delivery-options-postnet-woocommerce'); ?></a>
+      <label for="postnet_delivery_csv" class="button"><?php echo esc_html__('Import Products CSV', 'delivery-options-postnet-woocommerce'); ?></label>
     </form>
     <form method="post" enctype="multipart/form-data" class="hidden">
       <?php wp_nonce_field('postnet_delivery_action', 'postnet_delivery_nonce'); ?>
@@ -214,7 +216,7 @@ function wc_postnet_delivery_enqueue_scripts($hook) {
 function wc_postnet_delivery_admin() {
   // Check if the export action has been triggered
   if (isset($_GET['action']) && $_GET['action'] === 'export_products') {
-    if (isset($_GET['_wpnonce']) && wp_verify_nonce($_GET['_wpnonce'], 'export_products_nonce')) {
+    if (isset($_GET['_wpnonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_GET['_wpnonce'])), 'export_products_nonce')) {
       wc_postnet_delivery_export_products_csv();
     } else {
       wp_die('Security check failed.');
@@ -223,17 +225,16 @@ function wc_postnet_delivery_admin() {
   
   // Check if the import action has been triggered
   if (isset($_POST['action']) && $_POST['action'] === 'import_products' && !empty($_FILES['postnet_delivery_csv'])) {
-    if (isset($_POST['postnet_delivery_nonce']) && wp_verify_nonce($_POST['postnet_delivery_nonce'], 'postnet_delivery_action')) {
+    if (isset($_POST['postnet_delivery_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['postnet_delivery_nonce'])), 'postnet_delivery_action')) {
       wc_postnet_delivery_import_products_csv();
     } else {
-      // Invalid nonce, return an error or exit
       wp_die('Security check failed.');
     }
   }
   
   // Configure shipping options
   if (isset($_GET['action']) && $_GET['action'] === 'configure_shipping_options') {
-    if (isset($_GET['_wpnonce']) && wp_verify_nonce($_GET['_wpnonce'], 'configure_shipping_options_nonce')) {
+    if (isset($_GET['_wpnonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_GET['_wpnonce'])), 'configure_shipping_options_nonce')) {
       wc_postnet_delivery_configure_shipping_options();
     } else {
       wp_die('Security check failed.');
@@ -302,7 +303,7 @@ function wc_postnet_delivery_export_products_csv() {
 
 function wc_postnet_delivery_import_products_csv() {
   // Verify the nonce for security
-  if (!(isset($_POST['postnet_delivery_nonce']) && wp_verify_nonce($_POST['postnet_delivery_nonce'], 'postnet_delivery_action'))) {
+  if (!(isset($_POST['postnet_delivery_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['postnet_delivery_nonce'])), 'postnet_delivery_action'))) {
     wp_die('Security check failed.');
   }
 
@@ -456,7 +457,7 @@ function wc_postnet_delivery_create_shipping_option($zone, $method_type, $method
 
 function woocommerce_postnet_delivery_show_shipping_configured_notice() {
   if (isset($_GET['shipping_configured']) && $_GET['shipping_configured'] == '1') {
-    echo '<div class="notice notice-success is-dismissible"><p>' . __('Shipping options have been configured.', 'wc-postnet-delivery') . '</p></div>';
+    echo '<div class="notice notice-success is-dismissible"><p>' . __('Shipping options have been configured.', 'delivery-options-postnet-woocommerce') . '</p></div>';
   }
 }
 
@@ -485,10 +486,10 @@ function wc_postnet_delivery_product_fields() {
       [
         'id' => $field_id,
         // Translators: %s is the service type name.
-        'label' => sprintf(__('%s Delivery Fee', 'wc-postnet-delivery'), $service_types[$service]),
+        'label' => sprintf(__('%s Delivery Fee', 'delivery-options-postnet-woocommerce'), $service_types[$service]),
         'desc_tip' => 'true',
         // Translators: %s is the service type name.
-        'description' => sprintf(__('Enter the delivery fee for %s service.', 'wc-postnet-delivery'), $service_types[$service]),
+        'description' => sprintf(__('Enter the delivery fee for %s service.', 'delivery-options-postnet-woocommerce'), $service_types[$service]),
         'type' => 'number',
         'custom_attributes' => [
           'step' => 'any',
@@ -635,8 +636,8 @@ function wc_postnet_delivery_checkout_field_update_order_meta($order_id) {
 }
 
 function wc_postnet_delivery_checkout_field_display_admin_order_meta($order) {
-  $store = json_decode(get_post_meta( $order->get_id(), 'Destination Store', true ));
-  echo '<p><strong>'.esc_html__('Destination Store').':</strong> ' . esc_html($store[1]) . '</p>';
+  $store = json_decode(get_post_meta($order->get_id(), 'Destination Store', true));
+  echo '<p><strong>' . esc_html__('Destination Store', 'delivery-options-postnet-woocommerce') . ':</strong> ' . esc_html($store[1]) . '</p>';
 }
 
 function wc_postnet_delivery_validations() {

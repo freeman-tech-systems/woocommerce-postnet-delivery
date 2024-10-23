@@ -1,4 +1,4 @@
-=== PostNet Delivery For WooCommerce ===
+=== Delivery Options For PostNet ===
 Contributors: freeman-tech-systems
 Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
@@ -8,10 +8,23 @@ Stable tag: 1.0.0
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-PostNet Delivery For WooCommerce is a plugin that adds PostNet delivery options to your WooCommerce store.
+Delivery Options For PostNet is a plugin that adds PostNet delivery options to your WooCommerce store.
 
 == Description ==
-PostNet Delivery For WooCommerce is a plugin that adds PostNet delivery options to your WooCommerce store. Offer customers the flexibility to choose from various PostNet shipping methods such as Free Shipping, PostNet to PostNet, Express, and Economy.
+Delivery Options For PostNet is a plugin that adds PostNet delivery options to your WooCommerce store. Offer customers the flexibility to choose from various PostNet shipping methods such as Free Shipping, PostNet to PostNet, Express, and Economy.
+
+This plugin integrates with PostNet's API to provide real-time shipping rates, generate waybills, and notify stores about new orders. By using this plugin, you agree that order data will be sent to PostNet for processing.
+
+= Third-Party Service Integration =
+This plugin relies on PostNet's API as a third-party service for the following functionalities:
+* Fetching real-time shipping rates
+* Generating waybills for orders
+* Notifying PostNet stores about new orders
+
+For more information about PostNet's services, please visit: https://www.postnet.co.za/
+
+= Privacy and Terms =
+By using this plugin, you agree to PostNet's terms of service and privacy policy: [PostNet Privacy Policy](https://www.postnet.co.za/app-privacy-policy)
 
 == Features ==
 * Multiple Shipping Options: Provide different shipping methods to your customers.
