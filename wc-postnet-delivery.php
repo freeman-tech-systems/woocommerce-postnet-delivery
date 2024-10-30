@@ -44,7 +44,23 @@ function wc_postnet_delivery_compatibility() {
 }
 
 function wc_postnet_delivery_settings_init() {
-  register_setting('wc_postnet_delivery', 'wc_postnet_delivery_options');
+  register_setting(
+    'wc_postnet_delivery', 
+    'wc_postnet_delivery_options',
+    array(
+      'type' => 'array',
+      'sanitize_callback' => 'wc_postnet_delivery_sanitize_options',
+      'default' => array(
+        'service_type' => array(),
+        'collection_type' => 'always_collect',
+        'postnet_to_postnet_fee' => '',
+        'order_amount_threshold' => '',
+        'postnet_store' => '',
+        'postnet_api_key' => '',
+        'postnet_api_passcode' => ''
+      )
+    )
+  );
 
   add_settings_section(
     'wc_postnet_delivery_section',
@@ -66,7 +82,7 @@ function wc_postnet_delivery_settings_page() {
 }
 
 function wc_postnet_delivery_section_callback() {
-  echo '<p>' . esc_html__('Set up delivery options for PostNet.', 'delivery-options-postnet-woocommerce') . ' <a href="' . esc_url('https://www.postnet.co.za/woocommerce-app-info') . '" target="_blank">Setup and Usage Instructions</a></p>';
+  echo '<p>' . esc_html__('Set up delivery options for PostNet.', 'delivery-options-postnet-woocommerce') . ' <a href="' . esc_url('https://www.postnet.co.za/woocommerce-app-info') . '" target="_blank">' . esc_html__('Setup and Usage Instructions', 'delivery-options-postnet-woocommerce') . '</a></p>';
 }
 
 function wc_postnet_delivery_service_types() {
@@ -457,7 +473,7 @@ function wc_postnet_delivery_create_shipping_option($zone, $method_type, $method
 
 function woocommerce_postnet_delivery_show_shipping_configured_notice() {
   if (isset($_GET['shipping_configured']) && $_GET['shipping_configured'] == '1') {
-    echo '<div class="notice notice-success is-dismissible"><p>' . __('Shipping options have been configured.', 'delivery-options-postnet-woocommerce') . '</p></div>';
+    echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Shipping options have been configured.', 'delivery-options-postnet-woocommerce') . '</p></div>';
   }
 }
 
@@ -662,25 +678,25 @@ function wc_postnet_delivery_validations() {
 }
 
 function wc_postnet_delivery_order_received_page($order) {
-  $destination_store = get_post_meta( $order->get_id(), 'Destination Store', true );
-  if ( ! empty( $destination_store ) ) {
+  $destination_store = get_post_meta($order->get_id(), 'Destination Store', true);
+  if (!empty($destination_store)) {
     $store = json_decode($destination_store);
-    echo '<p><strong>Destination Store:</strong> ' . esc_html( $store[1] ) . '</p>';
+    echo '<p><strong>' . esc_html__('Destination Store', 'delivery-options-postnet-woocommerce') . ':</strong> ' . esc_html($store[1]) . '</p>';
   }
   
-  $waybill_number = get_post_meta( $order->get_id(), 'Waybill Number', true );
-  if ( ! empty( $waybill_number ) ) {
-    echo '<p><strong>Waybill Number:</strong> ' . esc_html( $waybill_number ) . '</p>';
+  $waybill_number = get_post_meta($order->get_id(), 'Waybill Number', true);
+  if (!empty($waybill_number)) {
+    echo '<p><strong>' . esc_html__('Waybill Number', 'delivery-options-postnet-woocommerce') . ':</strong> ' . esc_html($waybill_number) . '</p>';
   }
   
-  $tracking_url = get_post_meta( $order->get_id(), 'Tracking URL', true );
-  if ( ! empty( $tracking_url ) ) {
-    echo '<p><strong>Tracking URL:</strong> <a href="'.esc_url($tracking_url) .'" target="_blank">' . esc_html( $tracking_url ) . '</a></p>';
+  $tracking_url = get_post_meta($order->get_id(), 'Tracking URL', true);
+  if (!empty($tracking_url)) {
+    echo '<p><strong>' . esc_html__('Tracking URL', 'delivery-options-postnet-woocommerce') . ':</strong> <a href="' . esc_url($tracking_url) . '" target="_blank">' . esc_html($tracking_url) . '</a></p>';
   }
   
-  $label_print = get_post_meta( $order->get_id(), 'Label Print', true );
-  if ( ! empty( $label_print ) ) {
-    echo '<p><strong>Label Print:</strong> <a href="'.esc_url($label_print) .'" target="_blank">' . esc_html( $label_print ) . '</a></p>';
+  $label_print = get_post_meta($order->get_id(), 'Label Print', true);
+  if (!empty($label_print)) {
+    echo '<p><strong>' . esc_html__('Label Print', 'delivery-options-postnet-woocommerce') . ':</strong> <a href="' . esc_url($label_print) . '" target="_blank">' . esc_html($label_print) . '</a></p>';
   }
 }
 
@@ -801,4 +817,55 @@ function wc_postnet_delivery_collection_notification($order_id){
       error_log('API Response: ' . $response_body);
     }
   }
+}
+
+/**
+ * Sanitize the plugin options
+ *
+ * @param array $input The raw input array
+ * @return array The sanitized output array
+ */
+function wc_postnet_delivery_sanitize_options($input) {
+  $sanitized = array();
+
+  // Sanitize service types array
+  if (isset($input['service_type']) && is_array($input['service_type'])) {
+    $valid_services = array_keys(wc_postnet_delivery_service_types());
+    $sanitized['service_type'] = array_filter($input['service_type'], function($service) use ($valid_services) {
+      return in_array($service, $valid_services);
+    });
+  } else {
+    $sanitized['service_type'] = array();
+  }
+
+  // Sanitize collection type
+  $valid_collection_types = array('always_collect', 'always_deliver', 'service_based');
+  $sanitized['collection_type'] = isset($input['collection_type']) && in_array($input['collection_type'], $valid_collection_types) 
+    ? $input['collection_type'] 
+    : 'always_collect';
+
+  // Sanitize numeric fields
+  $sanitized['postnet_to_postnet_fee'] = isset($input['postnet_to_postnet_fee']) 
+    ? floatval($input['postnet_to_postnet_fee']) 
+    : '';
+  
+  $sanitized['order_amount_threshold'] = isset($input['order_amount_threshold']) 
+    ? floatval($input['order_amount_threshold']) 
+    : '';
+
+  // Sanitize store code
+  $sanitized['postnet_store'] = isset($input['postnet_store']) 
+    ? sanitize_text_field($input['postnet_store']) 
+    : '';
+
+  // Sanitize API credentials
+  $sanitized['postnet_api_key'] = isset($input['postnet_api_key']) 
+    ? sanitize_text_field($input['postnet_api_key']) 
+    : '';
+  
+  $sanitized['postnet_api_passcode'] = isset($input['postnet_api_passcode']) 
+    ? sanitize_text_field($input['postnet_api_passcode']) 
+    : '';
+
+  return $sanitized;
 }

@@ -1,5 +1,5 @@
 === Delivery Options For PostNet ===
-Contributors: freeman-tech-systems
+Contributors: freemantech
 Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.6.1
