@@ -35,7 +35,13 @@ add_action('woocommerce_thankyou', 'wc_postnet_delivery_collection_notification'
 add_action('wp_ajax_nopriv_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 add_action('wp_ajax_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 
-add_filter('woocommerce_package_rates', 'wc_postnet_delivery_custom_shipping_methods_logic', 10, 2);
+//add_filter('woocommerce_package_rates', 'wc_postnet_delivery_custom_shipping_methods_logic', 10, 2);
+
+// Hook for enqueuing scripts
+add_action('wp_enqueue_scripts', 'wc_postnet_delivery_enqueue_frontend_scripts');
+
+// Hook to store destination store data from blocks checkout
+add_filter('woocommerce_store_api_checkout_order_processed', 'wc_postnet_delivery_blocks_checkout_update_order_meta', 10, 1);
 
 function wc_postnet_delivery_compatibility() {
   if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
@@ -607,15 +613,40 @@ function wc_postnet_delivery_fetch_stores() {
 }
 
 function wc_postnet_delivery_stores() {
-    $stores = wc_postnet_delivery_fetch_stores();
-    
-    // Check if decoding was successful
-    if ( null === $stores ) {
-      wp_send_json_error( 'Error decoding stores data' );
-      return;
+  // Verify security nonce
+  if (isset($_POST['security']) && wp_verify_nonce(sanitize_text_field($_POST['security']), 'wc_postnet_delivery_nonce')) {
+    try {
+      $stores = wc_postnet_delivery_fetch_stores();
+      
+      if (empty($stores)) {
+        wp_send_json_error('No stores found');
+        return;
+      }
+      
+      // Format stores for the frontend
+      $formatted_stores = array();
+      foreach ($stores as $store) {
+        // Support both object and array access
+        $code = is_object($store) ? ($store->code ?? null) : ($store['code'] ?? null);
+        $name = is_object($store) ? ($store->name ?? $store->store_name ?? null) : ($store['name'] ?? $store['store_name'] ?? null);
+        
+        if ($code && $name) {
+          $formatted_stores[] = array(
+            'code' => $code,
+            'name' => $name
+          );
+        }
+      }
+      
+      wp_send_json_success($formatted_stores);
+    } catch (Exception $e) {
+      wp_send_json_error('Error: ' . $e->getMessage());
     }
-
-    wp_send_json_success( $stores );
+  } else {
+    wp_send_json_error('Security check failed');
+  }
+  
+  wp_die();
 }
 
 function wc_postnet_delivery_checkout_field($rate) {
@@ -868,4 +899,101 @@ function wc_postnet_delivery_sanitize_options($input) {
     : '';
 
   return $sanitized;
+}
+
+// Implement frontend scripts loading
+function wc_postnet_delivery_enqueue_frontend_scripts() {
+  if (!function_exists('is_checkout') || !is_checkout()) {
+    return;
+  }
+
+  // Generate a unique version to prevent caching
+  $version = '1.0.' . time();
+  
+  // Check if WooCommerce Blocks is active
+  if (class_exists('\Automattic\WooCommerce\Blocks\Package')) {
+    error_log('PostNet: Loading blocks checkout script with version ' . $version);
+    
+    // Enqueue our block checkout script
+    wp_register_script(
+      'wc-postnet-delivery-blocks-js',
+      plugin_dir_url(__FILE__) . 'js/wc-postnet-delivery-blocks.js',
+      array('jquery', 'wp-element', 'wp-components'),
+      $version,
+      true
+    );
+    
+    // Pass necessary data to JavaScript
+    wp_localize_script(
+      'wc-postnet-delivery-blocks-js',
+      'wc_postnet_delivery_params',
+      array(
+        'ajax_url' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('wc_postnet_delivery_nonce'),
+        'shipping_method_title' => POSTNET_SHIPPING_STORE,
+        'debug_mode' => true,
+        'version' => $version
+      )
+    );
+    
+    wp_enqueue_script('wc-postnet-delivery-blocks-js');
+    
+    // Add a debugging helper in the footer
+    add_action('wp_footer', 'wc_postnet_delivery_add_debug_helper');
+  }
+}
+
+// Add a debug helper script
+function wc_postnet_delivery_add_debug_helper() {
+  ?>
+  <script type="text/javascript">
+    // Debug helper function
+    window.checkPostNetIntegration = function() {
+      console.log('---------- PostNet Debug Info ----------');
+      console.log('Script params:', window.wc_postnet_delivery_params || 'Not loaded');
+      console.log('Selected store:', localStorage.getItem('postnet_selected_store') || 'None');
+      console.log('Hidden input:', document.getElementById('postnet_selected_store_input') || 'Not found');
+      
+      const container = document.getElementById('postnet-store-selector-container');
+      console.log('Selector container:', container || 'Not found');
+      
+      // Find all shipping method labels
+      const labels = document.querySelectorAll('.wc-block-components-radio-control__label');
+      console.log('Shipping method labels:', labels.length);
+      labels.forEach(label => {
+        console.log(' - ' + label.textContent + (label.closest('.wc-block-components-radio-control__option').querySelector('input:checked') ? ' (SELECTED)' : ''));
+      });
+      
+      console.log('---------------------------------------');
+    };
+    console.log('PostNet debug helper loaded. Call checkPostNetIntegration() to debug.');
+  </script>
+  <?php
+}
+
+// Update order meta with store selection from blocks checkout
+function wc_postnet_delivery_blocks_checkout_update_order_meta($order) {
+  // Try various methods to get the selected store
+  $selected_store = '';
+  
+  // Method 1: Get from request payload
+  $request = json_decode(file_get_contents('php://input'), true);
+  if (!empty($request['extensions']['postnet-delivery-options']['postnet_selected_store'])) {
+    $selected_store = $request['extensions']['postnet-delivery-options']['postnet_selected_store'];
+  } 
+  // Method 2: Get from cookie
+  elseif (!empty($_COOKIE['postnet_selected_store'])) {
+    $selected_store = sanitize_text_field($_COOKIE['postnet_selected_store']);
+  }
+  // Method 3: Get from POST data
+  elseif (!empty($_POST['postnet_selected_store'])) {
+    $selected_store = sanitize_text_field($_POST['postnet_selected_store']);
+  }
+  
+  // Save the selected store if we found one
+  if (!empty($selected_store)) {
+    update_post_meta($order->get_id(), 'Destination Store', sanitize_text_field($selected_store));
+  }
+  
+  return $order;
 }
