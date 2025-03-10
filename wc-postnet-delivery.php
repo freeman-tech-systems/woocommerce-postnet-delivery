@@ -35,7 +35,7 @@ add_action('woocommerce_thankyou', 'wc_postnet_delivery_collection_notification'
 add_action('wp_ajax_nopriv_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 add_action('wp_ajax_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 
-//add_filter('woocommerce_package_rates', 'wc_postnet_delivery_custom_shipping_methods_logic', 10, 2);
+add_filter('woocommerce_package_rates', 'wc_postnet_delivery_custom_shipping_methods_logic', 10, 2);
 
 // Hook for enqueuing scripts
 add_action('wp_enqueue_scripts', 'wc_postnet_delivery_enqueue_frontend_scripts');
