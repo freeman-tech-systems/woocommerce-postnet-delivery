@@ -1165,5 +1165,4 @@
         });
         container.appendChild(retryButton);
     }
-
 })();
