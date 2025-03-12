@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.6.1
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -38,13 +38,16 @@ By using this plugin, you agree to PostNet's terms of service and privacy policy
 3. Choose the downloaded zip file and click Install Now.
 4. Activate the plugin through the Plugins menu in WordPress.
 5. Under WooCommerce in the menu click on the PostNet Delivery menu item to configure the plugin.
-6. This plugin is not yet compatible with the WooCommerce Checkout Block in the block editor, so you will need to use the `[woocommerce_checkout]` shortcode instead.
+6. This plugin is compatible with the WooCommerce Checkout Block in the block editor, and also supports the previous `[woocommerce_checkout]` shortcode as well.
 7. This plugin is not yet compatible with the new WooCommerce Product management screen, so you will need to use the Classic screen instead.
 
 == Usage ==
 Setup and usage instructions can be found at [PostNet WooCommerce Plugin](https://www.postnet.co.za/woocommerce-app-info).
 
 == Changelog ==
+= 1.0.1 =
+* Added support for the checkout blocks on the checkout page
+
 = 1.0.0 =
 * Initial release with basic PostNet delivery options.
 
