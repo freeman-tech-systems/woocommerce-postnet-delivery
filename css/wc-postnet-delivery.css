@@ -1,0 +1,385 @@
+/* PostNet Store Selector - Modern Design */
+
+/* Main container */
+.postnet-store-selector {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 20px 0;
+}
+
+/* Tab headers with icons */
+.postnet-tab-headers {
+  display: flex;
+  background-color: #f8f8f8;
+  border-bottom: 1px solid #eaeaea;
+  position: relative;
+}
+
+.postnet-tab-header {
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #666;
+  transition: all 0.2s ease;
+  position: relative;
+  text-align: center;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.postnet-tab-header.active {
+  background-color: #fff;
+  color: #2271b1;
+  border-bottom: none;
+}
+
+.postnet-tab-header.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background-color: #2271b1;
+}
+
+.postnet-tab-header:hover:not(.active) {
+  background-color: #f0f0f0;
+}
+
+.postnet-tab-header svg,
+.postnet-tab-header img {
+  width: 18px;
+  height: 18px;
+}
+
+/* Tab content */
+.postnet-tab-content {
+  display: none;
+  padding: 0;
+}
+
+.postnet-tab-content.active {
+  display: block;
+}
+
+/* Map styles */
+#postnet-map-container {
+  height: 450px;
+  width: 100%;
+}
+
+/* Selected store details panel */
+#postnet-selected-store-details {
+  padding: 16px 20px;
+  display: none;
+  background-color: #f9f9f9;
+  border-top: 1px solid #eaeaea;
+}
+
+#postnet-selected-store-details.active {
+  display: block;
+}
+
+/* Store navigation header */
+.postnet-store-nav {
+  display: flex;
+  align-items: center;
+  padding: 12px 0;
+  justify-content: space-between;
+  border-bottom: 1px solid #eaeaea;
+}
+
+.postnet-location-counter {
+  font-size: 14px;
+  color: #666;
+  text-align: center;
+}
+
+.postnet-store-nav-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+  text-align: center;
+  flex: 1;
+  padding: 0 10px;
+}
+
+.postnet-nav-btn {
+  background-color: transparent;
+  border: 1px solid #ddd;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #555;
+  transition: all 0.2s ease;
+  min-width: 32px;
+  height: 32px;
+}
+
+.postnet-nav-btn:hover:not(:disabled) {
+  border-color: #2271b1;
+  color: #2271b1;
+}
+
+.postnet-nav-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.postnet-nav-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+.postnet-store-address {
+  margin-bottom: 8px;
+  color: #555;
+  line-height: 1.5;
+}
+
+.postnet-store-contact {
+  font-size: 14px;
+  color: #666;
+}
+
+/* List styles */
+.postnet-stores-list {
+  max-height: 450px;
+  overflow-y: auto;
+}
+
+.postnet-store-item {
+  padding: 16px 20px;
+  border-bottom: 1px solid #eaeaea;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.postnet-store-item:hover {
+  background-color: #f5f9ff;
+}
+
+.postnet-store-item.selected {
+  background-color: #f0f7ff;
+  border-left: 4px solid #2271b1;
+  padding-left: 16px;
+}
+
+.postnet-store-item:last-child {
+  border-bottom: none;
+}
+
+.postnet-store-name {
+  font-weight: 600;
+  font-size: 15px;
+  color: #333;
+  display: block;
+  flex: 1;
+}
+
+.postnet-store-item.selected .postnet-store-name {
+  color: #2271b1;
+}
+
+.postnet-store-address-details {
+  font-size: 14px;
+  color: #555;
+  line-height: 1.4;
+}
+
+.postnet-store-loading {
+  font-style: italic;
+  color: #999;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.postnet-select-btn {
+  background-color: #2271b1;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.postnet-select-btn:hover {
+  background-color: #135e96;
+}
+
+/* Pagination styles */
+.postnet-pagination {
+  display: flex;
+  justify-content: center;
+  padding: 15px;
+  background-color: #f9f9f9;
+  border-top: 1px solid #eaeaea;
+}
+
+.postnet-page-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  margin: 0 3px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  border: 1px solid #ddd;
+  background: #fff;
+  color: #555;
+  transition: all 0.2s;
+}
+
+.postnet-page-number:hover:not(.active) {
+  border-color: #2271b1;
+  color: #2271b1;
+}
+
+.postnet-page-number.active {
+  background: #2271b1;
+  color: white;
+  border-color: #2271b1;
+}
+
+.postnet-list-page {
+  display: none;
+}
+
+.postnet-list-page.active {
+  display: block;
+}
+
+/* Dropdown Styles */
+.wc-block-components-form-label {
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 10px;
+  display: block;
+}
+
+/* For classic checkout */
+.woocommerce-checkout .postnet-store-selector {
+  margin-bottom: 30px;
+}
+
+/* For checkout blocks */
+.wp-block-woocommerce-checkout .postnet-store-selector {
+  margin: 0 0 24px;
+}
+
+/* Custom Google Map marker styling */
+.gm-style .gm-style-iw {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 400;
+}
+
+/* Mobile responsive styles */
+@media only screen and (max-width: 768px) {
+  #postnet-map-container {
+    height: 350px;
+  }
+  
+  .postnet-tab-header {
+    padding: 12px;
+    font-size: 14px;
+  }
+  
+  .postnet-store-name {
+    font-size: 14px;
+  }
+  
+  .postnet-store-address-details {
+    font-size: 13px;
+  }
+  
+  .postnet-store-nav-title {
+    font-size: 15px;
+  }
+  
+  .postnet-nav-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+}
+
+/* Validation message */
+#postnet-store-validation {
+  color: #cc1818;
+  margin-top: 8px;
+  font-size: 14px;
+  padding: 6px 10px;
+  border-left: 3px solid #cc1818;
+  background-color: #fef8f8;
+}
+
+/* List view radio button styles */
+.postnet-store-radio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.postnet-store-radio input[type="radio"] {
+  margin: 0;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+/* Map view store details layout */
+.postnet-store-details-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.postnet-store-content {
+  padding-top: 16px;
+}
+
+.postnet-store-header {
+  font-weight: 600;
+  font-size: 16px;
+  color: #333;
+  margin-bottom: 12px;
+}
+
+.postnet-store-section {
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.postnet-store-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.postnet-section-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #555;
+  margin-bottom: 6px;
+}
