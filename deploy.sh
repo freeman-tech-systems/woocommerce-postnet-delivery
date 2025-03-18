@@ -27,8 +27,8 @@ if [ -z "$SVN_USER" ] || [ -z "$SVN_PASS" ]; then
     echo ""
 fi
 
-# Store credentials temporarily
-SVN_ARGS="--username $SVN_USER --password $SVN_PASS --non-interactive --no-auth-cache"
+# Store credentials for SVN operations - removed the "--no-auth-cache" flag
+SVN_ARGS="--username $SVN_USER --password $SVN_PASS --non-interactive"
 
 # Extract version from the main plugin file
 VERSION=$(grep -i "^[ \t/*#]*version:[ \t]*" "$MAIN_PLUGIN_FILE" | awk -F: '{print $2}' | tr -d ' \t\r\n')
@@ -117,6 +117,7 @@ echo "Adding files to SVN..."
 cd "$DEPLOY_DIR"
 svn add --force trunk/* --auto-props --parents --depth infinity -q
 svn add --force tags/* --auto-props --parents --depth infinity -q
+svn add --force assets/* --auto-props --parents --depth infinity -q 2>/dev/null
 
 # Remove deleted files
 svn status | grep '^\!' | sed 's/! *//' | xargs -I% svn rm %@
@@ -130,10 +131,20 @@ read -p "Do you want to commit these changes? (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]
 then
-    # Commit changes
+    # Commit changes - use direct credential approach
     echo "Committing version $VERSION..."
-    svn ci $SVN_ARGS -m "Release version $VERSION"
-    echo "Deployment complete!"
+    svn ci --username "$SVN_USER" --password "$SVN_PASS" -m "Release version $VERSION"
+    
+    if [ $? -ne 0 ]; then
+        echo "SVN commit failed. Trying with --force-interactive flag..."
+        svn ci --username "$SVN_USER" --password "$SVN_PASS" --force-interactive -m "Release version $VERSION"
+    fi
+    
+    if [ $? -eq 0 ]; then
+        echo "Deployment complete!"
+    else
+        echo "Error: SVN commit failed"
+    fi
 else
     echo "Deployment cancelled"
 fi

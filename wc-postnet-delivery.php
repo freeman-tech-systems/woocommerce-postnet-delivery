@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
  * Plugin Name: Delivery Options For PostNet
  * Plugin URI: https://github.com/freeman-tech-systems/woocommerce-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
- * Version: 1.0.1
+ * Version: 1.0.2
  * Author: Freeman Tech Systems
  * Author URI: https://github.com/freeman-tech-systems
  * License: GPL2
@@ -34,6 +34,7 @@ add_action('woocommerce_product_options_shipping', 'wc_postnet_delivery_product_
 add_action('woocommerce_thankyou', 'wc_postnet_delivery_collection_notification', 10, 1);
 add_action('wp_ajax_nopriv_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 add_action('wp_ajax_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
+add_action('wp_ajax_validate_google_api_key', 'wc_postnet_validate_google_api_key');
 
 add_filter('woocommerce_package_rates', 'wc_postnet_delivery_custom_shipping_methods_logic', 10, 2);
 
@@ -42,6 +43,10 @@ add_action('wp_enqueue_scripts', 'wc_postnet_delivery_enqueue_frontend_scripts')
 
 // Hook to store destination store data from blocks checkout
 add_filter('woocommerce_store_api_checkout_order_processed', 'wc_postnet_delivery_blocks_checkout_update_order_meta', 10, 1);
+
+// Add action for AJAX endpoint to get PostNet store details
+add_action('wp_ajax_wc_postnet_delivery_store_details', 'wc_postnet_delivery_get_store_details');
+add_action('wp_ajax_nopriv_wc_postnet_delivery_store_details', 'wc_postnet_delivery_get_store_details');
 
 function wc_postnet_delivery_compatibility() {
   if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
@@ -63,7 +68,8 @@ function wc_postnet_delivery_settings_init() {
         'order_amount_threshold' => '',
         'postnet_store' => '',
         'postnet_api_key' => '',
-        'postnet_api_passcode' => ''
+        'postnet_api_passcode' => '',
+        'google_api_key' => ''
       )
     )
   );
@@ -128,6 +134,7 @@ function wc_postnet_delivery_options_page() {
   }
   
   $stores = json_decode(wc_postnet_fetch_url('https://www.postnet.co.za/cart_store-json_list/'));
+  error_log(print_r($stores, true));
   $selected_store = isset($options['postnet_store']) ? esc_attr($options['postnet_store']) : '';
   ?>
   <div class="wrap">
@@ -206,6 +213,15 @@ function wc_postnet_delivery_options_page() {
             <input type="text" name="wc_postnet_delivery_options[postnet_api_passcode]" id="postnet_api_passcode" style="width:300px;" value="<?php echo esc_attr(isset($options['postnet_api_passcode']) ? $options['postnet_api_passcode'] : ''); ?>" required />
           </td>
         </tr>
+        <tr>
+          <th scope="row"><label for="google_api_key"><?php echo esc_html__('Google API Key', 'delivery-options-postnet-woocommerce'); ?></label></th>
+          <td>
+            <input type="text" name="wc_postnet_delivery_options[google_api_key]" id="google_api_key" style="width:300px;" value="<?php echo esc_attr(isset($options['google_api_key']) ? $options['google_api_key'] : ''); ?>" />
+            <button type="button" id="validate_google_api" class="button"><?php echo esc_html__('Validate', 'delivery-options-postnet-woocommerce'); ?></button>
+            <span class="spinner" id="google_api_spinner" style="float: none;"></span>
+            <p class="description"><?php echo esc_html__('Enter your Google Maps API key with Maps JavaScript API enabled.', 'delivery-options-postnet-woocommerce'); ?></p>
+          </td>
+        </tr>
       </table>
       
       <?php
@@ -231,7 +247,20 @@ function wc_postnet_delivery_enqueue_scripts($hook) {
   // Check if we are on the settings page of our plugin
   if ($hook == 'woocommerce_page_wc_postnet_delivery') {
     // Enqueue our script
-    wp_enqueue_script('wc-postnet-delivery-options-js', plugin_dir_url(__FILE__) . 'js/wc-postnet-delivery-options.js', array('jquery'), '1.0.1', true);
+    wp_enqueue_script('wc-postnet-delivery-options-js', plugin_dir_url(__FILE__) . 'js/wc-postnet-delivery-options.js', array('jquery'), '1.0.2', true);
+    
+    // Enqueue SweetAlert for nice alerts
+    wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', array(), '11.0', true);
+    
+    // Localize the script with data for AJAX
+    wp_localize_script(
+      'wc-postnet-delivery-options-js',
+      'wc_postnet_delivery_params',
+      array(
+        'ajax_url' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('wc_postnet_delivery_admin_nonce')
+      )
+    );
   }
 }
 
@@ -650,28 +679,98 @@ function wc_postnet_delivery_stores() {
 }
 
 function wc_postnet_delivery_checkout_field($rate) {
-  $chosen_methods = WC()->session->get( 'chosen_shipping_methods' );
+  $chosen_methods = WC()->session->get('chosen_shipping_methods');
 
   // The chosen methods are stored in an array, one for each package. Most stores will only have one package.
-  $chosen_method = ! empty( $chosen_methods ) ? $chosen_methods[0] : '';
+  $chosen_method = !empty($chosen_methods) ? $chosen_methods[0] : '';
 
   if ($rate->label != POSTNET_SHIPPING_STORE || $rate->id !== $chosen_method) return;
+  
+  // Get available stores
   $stores = wc_postnet_delivery_fetch_stores();
+  if (empty($stores)) return;
   
-  $options = array(
-    '' => 'Select a Store...'
-  );
+  // Get Google Maps API key from options
+  $options = get_option('wc_postnet_delivery_options');
+  $google_api_key = !empty($options['google_api_key']) ? $options['google_api_key'] : '';
   
-  foreach ($stores as $store){
-    $options[wp_json_encode([$store->code, $store->name])] = $store->name;
-  }
+  // Check if we're using blocks checkout
+  $is_blocks_checkout = class_exists('\Automattic\WooCommerce\Blocks\Package') && 
+                        did_action('woocommerce_blocks_enqueue_checkout_block_scripts');
   
-  woocommerce_form_field( 'destination_store', array(
-    'type'          => 'select',
-    'required'      => true,
-    'class'         => array('my-field-class form-row-wide'),
-    'options'       => $options, // Pass the options array
+  // Only use tabs for blocks checkout with Google Maps
+  $use_tabs = $is_blocks_checkout && !empty($google_api_key);
+  
+  if ($use_tabs) {
+    // Enhanced selector with Map and List views for blocks checkout
+    ?>
+    <div class="postnet-store-selector-tabs">
+      <div class="postnet-tab-headers">
+        <div class="postnet-tab-header active" data-tab="map"><?php esc_html_e('Map', 'delivery-options-postnet-woocommerce'); ?></div>
+        <div class="postnet-tab-header" data-tab="list"><?php esc_html_e('List', 'delivery-options-postnet-woocommerce'); ?></div>
+      </div>
+      
+      <div class="postnet-tab-content active" data-tab="map">
+        <div id="postnet-map-container"></div>
+        <div id="postnet-selected-store-details"></div>
+      </div>
+      
+      <div class="postnet-tab-content" data-tab="list">
+        <div class="postnet-stores-list">
+          <?php
+          $counter = 0;
+          $page = 1;
+          
+          echo '<div class="postnet-list-page active" data-page="' . esc_attr($page) . '">';
+          
+          foreach ($stores as $store) {
+            if ($counter % 5 === 0 && $counter > 0) {
+              echo '</div>';
+              $page++;
+              echo '<div class="postnet-list-page" data-page="' . esc_attr($page) . '">';
+            }
+            
+            echo '<div class="postnet-store-item" data-store-code="' . esc_attr($store->code) . '" data-store-name="' . esc_attr($store->name) . '">';
+            echo '<div class="postnet-store-name">' . esc_html($store->name) . '</div>';
+            echo '<div class="postnet-store-loading">' . esc_html__('Loading store details...', 'delivery-options-postnet-woocommerce') . '</div>';
+            echo '</div>';
+            
+            $counter++;
+          }
+          
+          echo '</div>';
+          
+          if ($page > 1) {
+            echo '<div class="postnet-pagination">';
+            for ($i = 1; $i <= $page; $i++) {
+              echo '<span class="postnet-page-number' . ($i === 1 ? ' active' : '') . '" data-page="' . esc_attr($i) . '">' . esc_html($i) . '</span>';
+            }
+            echo '</div>';
+          }
+          ?>
+        </div>
+      </div>
+      
+      <input type="hidden" name="destination_store" id="destination_store" value="" required>
+    </div>
+    <?php
+  } else {
+    // Simple dropdown selector for classic checkout
+    $options = array(
+      '' => 'Select a Store...'
+    );
+    
+    foreach ($stores as $store) {
+      $options[wp_json_encode([$store->code, $store->name])] = $store->name;
+    }
+    
+    woocommerce_form_field('destination_store', array(
+      'type'          => 'select',
+      'required'      => true,
+      'class'         => array('my-field-class form-row-wide'),
+      'options'       => $options,
     ));
+  }
   
   echo '</div>';
 }
@@ -897,6 +996,11 @@ function wc_postnet_delivery_sanitize_options($input) {
   $sanitized['postnet_api_passcode'] = isset($input['postnet_api_passcode']) 
     ? sanitize_text_field($input['postnet_api_passcode']) 
     : '';
+    
+  // Sanitize Google API key
+  $sanitized['google_api_key'] = isset($input['google_api_key']) 
+    ? sanitize_text_field($input['google_api_key']) 
+    : '';
 
   return $sanitized;
 }
@@ -909,6 +1013,10 @@ function wc_postnet_delivery_enqueue_frontend_scripts() {
 
   // Generate a unique version to prevent caching
   $version = '1.0.' . time();
+  
+  // Get Google API key from options
+  $options = get_option('wc_postnet_delivery_options');
+  $google_api_key = !empty($options['google_api_key']) ? $options['google_api_key'] : '';
   
   // Check if WooCommerce Blocks is active
   if (class_exists('\Automattic\WooCommerce\Blocks\Package')) {
@@ -923,6 +1031,26 @@ function wc_postnet_delivery_enqueue_frontend_scripts() {
       true
     );
     
+    // Enqueue styles for the store selector
+    wp_register_style(
+      'wc-postnet-delivery-style',
+      plugin_dir_url(__FILE__) . 'css/wc-postnet-delivery.css',
+      array(),
+      $version
+    );
+    wp_enqueue_style('wc-postnet-delivery-style');
+    
+    // If we have a Google API key, include Google Maps
+    if (!empty($google_api_key)) {
+      wp_enqueue_script(
+        'google-maps',
+        'https://maps.googleapis.com/maps/api/js?key=' . esc_attr($google_api_key) . '&libraries=places,marker',
+        array(),
+        null,
+        true
+      );
+    }
+    
     // Pass necessary data to JavaScript
     wp_localize_script(
       'wc-postnet-delivery-blocks-js',
@@ -932,14 +1060,43 @@ function wc_postnet_delivery_enqueue_frontend_scripts() {
         'nonce' => wp_create_nonce('wc_postnet_delivery_nonce'),
         'shipping_method_title' => POSTNET_SHIPPING_STORE,
         'debug_mode' => true,
-        'version' => $version
+        'version' => $version,
+        'has_google_maps' => !empty($google_api_key),
+        'google_api_key' => $google_api_key,
+        'map_marker_url' => plugins_url('assets/map-marker.png', __FILE__)
       )
     );
-    
     wp_enqueue_script('wc-postnet-delivery-blocks-js');
     
     // Add a debugging helper in the footer
     add_action('wp_footer', 'wc_postnet_delivery_add_debug_helper');
+  } else {
+    // Classic checkout - enqueue scripts and styles
+    wp_enqueue_style(
+      'wc-postnet-delivery-style',
+      plugin_dir_url(__FILE__) . 'css/wc-postnet-delivery.css',
+      array(),
+      $version
+    );
+    
+    // For classic checkout, we'll always use the dropdown, but still need AJAX for store details
+    wp_enqueue_script(
+      'wc-postnet-delivery-classic-js',
+      plugin_dir_url(__FILE__) . 'js/wc-postnet-delivery-classic.js',
+      array('jquery'),
+      $version,
+      true
+    );
+    
+    wp_localize_script(
+      'wc-postnet-delivery-classic-js',
+      'wc_postnet_delivery_params',
+      array(
+        'ajax_url' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('wc_postnet_delivery_nonce'),
+        'shipping_method_title' => POSTNET_SHIPPING_STORE,
+      )
+    );
   }
 }
 
@@ -996,4 +1153,92 @@ function wc_postnet_delivery_blocks_checkout_update_order_meta($order) {
   }
   
   return $order;
+}
+
+/**
+ * Get full store details for a specific store
+ */
+function wc_postnet_delivery_get_store_details() {
+  // Check nonce
+  check_ajax_referer('wc_postnet_delivery_nonce', 'security');
+  
+  // Get store code
+  $store_code = isset($_POST['store_code']) ? sanitize_text_field($_POST['store_code']) : '';
+  
+  if (empty($store_code)) {
+    wp_send_json_error(array('message' => 'Store code is required.'));
+    return;
+  }
+  
+  // Get all stores
+  $all_stores = json_decode(wc_postnet_fetch_url('https://www.postnet.co.za/cart_store-json_list/'));
+  
+  // Find the matching store
+  $store_details = null;
+  foreach ($all_stores as $store) {
+    if ($store->code === $store_code) {
+      $store_details = $store;
+      break;
+    }
+  }
+  
+  if ($store_details) {
+    // Format city/suburb field based on available data
+    $city_parts = array_filter(array(
+      isset($store_details->suburb) ? $store_details->suburb : null,
+      isset($store_details->town) ? $store_details->town : null
+    ));
+    $city = !empty($city_parts) ? implode(', ', $city_parts) : '';
+    
+    // Format the response using the proper field names from the API
+    $response = array(
+      'code' => $store_details->code,
+      'name' => $store_details->store_name,
+      'address' => isset($store_details->physical_address) ? $store_details->physical_address : '',
+      'city' => $city,
+      'province' => isset($store_details->region) ? $store_details->region : '',
+      'postal_code' => isset($store_details->postal_code) ? $store_details->postal_code : '',
+      'telephone' => isset($store_details->telephone) ? $store_details->telephone : '',
+      'email' => isset($store_details->email) ? $store_details->email : '',
+      'lat' => isset($store_details->latitude) ? (float)$store_details->latitude : 0,
+      'lng' => isset($store_details->longitude) ? (float)$store_details->longitude : 0,
+    );
+    
+    wp_send_json_success($response);
+  } else {
+    wp_send_json_error(array('message' => 'Store not found.'));
+  }
+  
+  wp_die();
+}
+
+/**
+ * AJAX handler to validate Google API Key
+ */
+function wc_postnet_validate_google_api_key() {
+  // Check nonce for security
+  check_ajax_referer('wc_postnet_delivery_admin_nonce', 'security');
+  
+  // Check permissions
+  if (!current_user_can('manage_options')) {
+    wp_send_json_error(array(
+      'message' => __('You do not have permission to perform this action.', 'delivery-options-postnet-woocommerce')
+    ));
+    return;
+  }
+  
+  // Get the API key from the request
+  $api_key = isset($_POST['api_key']) ? sanitize_text_field($_POST['api_key']) : '';
+  
+  if (empty($api_key)) {
+    wp_send_json_error(array(
+      'message' => __('API key is required.', 'delivery-options-postnet-woocommerce')
+    ));
+    return;
+  }
+  
+  // If everything is successful
+  wp_send_json_success(array(
+    'message' => __('Google API key is valid and has the required services enabled.', 'delivery-options-postnet-woocommerce')
+  ));
 }
