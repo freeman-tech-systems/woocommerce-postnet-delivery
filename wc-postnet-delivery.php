@@ -219,7 +219,7 @@ function wc_postnet_delivery_options_page() {
             <input type="text" name="wc_postnet_delivery_options[google_api_key]" id="google_api_key" style="width:300px;" value="<?php echo esc_attr(isset($options['google_api_key']) ? $options['google_api_key'] : ''); ?>" />
             <button type="button" id="validate_google_api" class="button"><?php echo esc_html__('Validate', 'delivery-options-postnet-woocommerce'); ?></button>
             <span class="spinner" id="google_api_spinner" style="float: none;"></span>
-            <p class="description"><?php echo esc_html__('Enter your Google Maps API key with Directions API and Maps JavaScript API enabled.', 'delivery-options-postnet-woocommerce'); ?></p>
+            <p class="description"><?php echo esc_html__('Enter your Google Maps API key with Maps JavaScript API enabled.', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
       </table>
@@ -1236,38 +1236,6 @@ function wc_postnet_validate_google_api_key() {
     ));
     return;
   }
-  
-  // Validate the Directions API access
-  $directions_url = add_query_arg(
-    array(
-      'origin' => 'Johannesburg',
-      'destination' => 'Cape Town',
-      'key' => $api_key
-    ),
-    'https://maps.googleapis.com/maps/api/directions/json'
-  );
-  
-  $directions_response = wp_remote_get($directions_url);
-  
-  if (is_wp_error($directions_response)) {
-    wp_send_json_error(array(
-      'message' => $directions_response->get_error_message()
-    ));
-    return;
-  }
-  
-  $directions_body = json_decode(wp_remote_retrieve_body($directions_response));
-  
-  // Check if the Directions API is enabled
-  if (isset($directions_body->status) && $directions_body->status === 'REQUEST_DENIED') {
-    wp_send_json_error(array(
-      'message' => __('The Directions API is not enabled for this API key.', 'delivery-options-postnet-woocommerce')
-    ));
-    return;
-  }
-  
-  // Also verify the Maps JavaScript API - we can only check for certain errors by calling the API directly
-  // In a real-world scenario, you'd want to test this properly, but for now we'll just validate the directions API
   
   // If everything is successful
   wp_send_json_success(array(
