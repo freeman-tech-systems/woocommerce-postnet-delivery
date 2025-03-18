@@ -1063,9 +1063,11 @@ function wc_postnet_delivery_enqueue_frontend_scripts() {
         'version' => $version,
         'has_google_maps' => !empty($google_api_key),
         'google_api_key' => $google_api_key,
+        'plugin_url' => plugins_url('', __DIR__), // Plugin directory URL
+        'site_url' => get_site_url(), // WordPress site URL from DB
+        'home_url' => home_url(), // WordPress home URL from DB
       )
     );
-    
     wp_enqueue_script('wc-postnet-delivery-blocks-js');
     
     // Add a debugging helper in the footer
