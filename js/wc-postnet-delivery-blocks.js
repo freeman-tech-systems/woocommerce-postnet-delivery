@@ -1,17 +1,17 @@
 /**
  * PostNet Delivery Store Selection for WooCommerce Blocks Checkout
- * Enhanced version with more robust detection and insertion methods
+ * Enhanced version with Map and List views
  */
 (function() {
     // Configuration
-    const DEBUG = true;
-    const CHECK_INTERVAL = 1000; // ms
-    const MAX_ATTEMPTS = 30;
+    const DEBUG = false;
     
     // State variables
-    let checkAttempts = 0;
-    let checkInterval = null;
     let observer = null;
+    let map = null;
+    let markers = [];
+    let selectedMarker = null;
+    let storeDetails = {}; // Cache for store details
     
     // Debug logging helper
     function log(message, data) {
@@ -39,18 +39,6 @@
         
         // First check
         checkShippingMethod();
-        
-        // Set up continuous checking
-        if (checkInterval) clearInterval(checkInterval);
-        checkInterval = setInterval(function() {
-            checkAttempts++;
-            if (checkAttempts > MAX_ATTEMPTS) {
-                clearInterval(checkInterval);
-                log('Max check attempts reached, stopping automatic checks');
-                return;
-            }
-            checkShippingMethod();
-        }, CHECK_INTERVAL);
         
         // Set up event listeners for shipping method changes
         setupEventListeners();
@@ -82,7 +70,6 @@
                         if (!selectedStore) {
                             log('Validation failed: No store selected');
                             return {
-                               // errorMessage: 'Please select a PostNet destination store.',
                                 valid: false,
                             };
                         }
@@ -107,6 +94,41 @@
                 log('Shipping method clicked, checking in 500ms');
                 setTimeout(checkShippingMethod, 500);
             }
+            
+            // Handle tab switching
+            if (e.target && e.target.classList.contains('postnet-tab-header')) {
+                const tabName = e.target.dataset.tab;
+                switchTab(tabName);
+            }
+            
+            // Handle store selection from list
+            if (e.target && (e.target.classList.contains('postnet-store-item') || e.target.closest('.postnet-store-item'))) {
+                const storeItem = e.target.classList.contains('postnet-store-item') ? 
+                    e.target : e.target.closest('.postnet-store-item');
+                
+                const storeCode = storeItem.dataset.storeCode;
+                const storeName = storeItem.dataset.storeName;
+                
+                // Select store
+                selectStore(storeCode, storeName, storeItem);
+            }
+            
+            // Handle pagination clicks
+            if (e.target && e.target.classList.contains('postnet-page-number')) {
+                const pageNumber = e.target.dataset.page;
+                
+                // Update active page
+                document.querySelectorAll('.postnet-page-number').forEach(el => {
+                    el.classList.remove('active');
+                });
+                e.target.classList.add('active');
+                
+                // Show active page content
+                document.querySelectorAll('.postnet-list-page').forEach(el => {
+                    el.classList.remove('active');
+                });
+                document.querySelector(`.postnet-list-page[data-page="${pageNumber}"]`).classList.add('active');
+            }
         });
         
         // Listen for form submissions
@@ -121,6 +143,53 @@
                     alert('Please select a PostNet destination store.');
                     return false;
                 }
+            }
+        });
+    }
+    
+    // Switch between tabs
+    function switchTab(tabName) {
+        log('Switching to tab:', tabName);
+        
+        // Update tab headers
+        const tabHeaders = document.querySelectorAll('.postnet-tab-header');
+        tabHeaders.forEach(header => {
+            if (header.dataset.tab === tabName) {
+                header.classList.add('active');
+            } else {
+                header.classList.remove('active');
+            }
+        });
+        
+        // Update tab content
+        const tabContents = document.querySelectorAll('.postnet-tab-content');
+        tabContents.forEach(content => {
+            if (content.dataset.tab === tabName) {
+                content.classList.add('active');
+                
+                // If switching to map tab and we have a map, trigger resize event
+                if (tabName === 'map' && map) {
+                    window.setTimeout(() => {
+                        google.maps.event.trigger(map, 'resize');
+                        
+                        // If we have markers, fit bounds
+                        if (markers.length > 0) {
+                            const bounds = new google.maps.LatLngBounds();
+                            markers.forEach(marker => bounds.extend(marker.getPosition()));
+                            map.fitBounds(bounds);
+                            
+                            // If we have a selected store, center on it
+                            if (selectedMarker) {
+                                window.setTimeout(() => {
+                                    map.setCenter(selectedMarker.getPosition());
+                                    map.setZoom(15);
+                                }, 100);
+                            }
+                        }
+                    }, 50);
+                }
+            } else {
+                content.classList.remove('active');
             }
         });
     }
@@ -289,31 +358,78 @@
             log('No insertion point found, cannot add store selector');
             return;
         }
+
+        // Check if Google Maps is available
+        const hasGoogleMaps = window.wc_postnet_delivery_params && 
+                             window.wc_postnet_delivery_params.has_google_maps &&
+                             window.google && window.google.maps;
+        
+        log('Has Google Maps:', hasGoogleMaps);
         
         // Create the container
         const container = document.createElement('div');
         container.id = 'postnet-store-selector-container';
         container.className = 'wc-block-components-checkout-step wc-block-components-shipping-rates-control__package postnet-store-selector';
-        container.style.marginTop = '24px';
-        container.style.marginBottom = '24px';
-        container.style.padding = '16px';
-        container.style.border = '1px solid #e0e0e0';
-        container.style.borderRadius = '4px';
         
         // Create title
         const title = document.createElement('div');
         title.className = 'wc-block-components-title';
         title.innerHTML = '<span class="wc-block-components-title__text">Select PostNet Store</span>';
-        title.style.marginBottom = '8px';
+        title.style.marginBottom = '16px';
         container.appendChild(title);
         
-        // Create loading indicator
-        const loading = document.createElement('div');
-        loading.textContent = 'Loading PostNet stores...';
-        loading.style.padding = '8px 0';
-        container.appendChild(loading);
+        if (hasGoogleMaps) {
+            // Create tab headers for advanced view
+            const tabHeaders = document.createElement('div');
+            tabHeaders.className = 'postnet-tab-headers';
+            tabHeaders.innerHTML = `
+                <div class="postnet-tab-header active" data-tab="map">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                    </svg>
+                    Map
+                </div>
+                <div class="postnet-tab-header" data-tab="list">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/>
+                    </svg>
+                    List
+                </div>
+            `;
+            container.appendChild(tabHeaders);
+            
+            // Create map tab content
+            const mapContent = document.createElement('div');
+            mapContent.className = 'postnet-tab-content active';
+            mapContent.dataset.tab = 'map';
+            mapContent.innerHTML = `
+                <div id="postnet-map-container"></div>
+                <div id="postnet-selected-store-details"></div>
+            `;
+            container.appendChild(mapContent);
+            
+            // Create list tab content
+            const listContent = document.createElement('div');
+            listContent.className = 'postnet-tab-content';
+            listContent.dataset.tab = 'list';
+            container.appendChild(listContent);
+        } else {
+            // Simple dropdown view when no Google Maps API key
+            log('No Google Maps API key, using simple dropdown');
+            const dropdownContent = document.createElement('div');
+            dropdownContent.className = 'postnet-tab-content active';
+            container.appendChild(dropdownContent);
+        }
         
-        // Decide where to insert the container
+        // Add hidden input field (always needed)
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = 'destination_store';
+        hiddenInput.id = 'destination_store';
+        hiddenInput.value = '';
+        container.appendChild(hiddenInput);
+        
+        // Insert the container into the DOM
         if (insertionPoint.classList.contains('wc-block-components-shipping-rates-control')) {
             // Insert after the shipping rates control
             insertionPoint.parentNode.insertBefore(container, insertionPoint.nextSibling);
@@ -362,6 +478,7 @@
         .then(function(data) {
             log('Stores response received', data);
             if (data.success && data.data && data.data.length > 0) {
+                allStores = data.data;
                 renderStoreSelector(container, data.data);
             } else {
                 throw new Error('Invalid store data received');
@@ -377,15 +494,34 @@
     function renderStoreSelector(container, stores) {
         log('Rendering store selector with ' + stores.length + ' stores');
         
-        // Clear container
-        container.innerHTML = '';
+        const hasGoogleMaps = window.wc_postnet_delivery_params && 
+                            window.wc_postnet_delivery_params.has_google_maps &&
+                            window.google && window.google.maps;
         
-        // Re-add title
-        const title = document.createElement('div');
-        title.className = 'wc-block-components-title';
-        title.innerHTML = '<span class="wc-block-components-title__text">Select PostNet Store</span>';
-        title.style.marginBottom = '16px';
-        container.appendChild(title);
+        // For simple dropdown view (no Google Maps)
+        if (!hasGoogleMaps) {
+            renderDropdownView(container.querySelector('.postnet-tab-content'), stores);
+        } else {
+            // Render list view for tab interface
+            const listTab = container.querySelector('.postnet-tab-content[data-tab="list"]');
+            if (listTab) {
+                renderListView(listTab, stores);
+            }
+            
+            // Render map view
+            const mapContainer = document.getElementById('postnet-map-container');
+            if (mapContainer) {
+                setTimeout(() => initializeMap(mapContainer, stores), 100);
+            }
+        }
+        
+        // Instead of restoring the store selection here,
+        // we'll do it after markers are fully loaded to ensure proper indexing
+    }
+    
+    // Render dropdown view (for when Google Maps API is not available)
+    function renderDropdownView(container, stores) {
+        container.innerHTML = '';
         
         // Create form field
         const fieldContainer = document.createElement('div');
@@ -397,7 +533,7 @@
         const label = document.createElement('label');
         label.htmlFor = 'postnet-store-select';
         label.className = 'wc-block-components-form-label';
-       // label.textContent = 'Destination Store';
+        //label.textContent = 'Select a PostNet Store';
         label.style.display = 'block';
         label.style.marginBottom = '8px';
         label.style.fontWeight = '600';
@@ -459,17 +595,20 @@
         // Add change event handler
         select.addEventListener('change', function() {
             const value = this.value;
-            log('Store selected', value);
+            log('Store selected from dropdown', value);
             
-            // Save selection
-            localStorage.setItem('postnet_selected_store', value);
-            document.cookie = 'postnet_selected_store=' + encodeURIComponent(value) + '; path=/; max-age=86400';
+            if (!value) {
+                return;
+            }
             
-            // Add hidden input to form
-            ensureHiddenInput(value);
-            
-            // Update validation state
-            updateValidationState(container);
+            try {
+                const storeData = JSON.parse(value);
+                if (Array.isArray(storeData) && storeData.length >= 2) {
+                    selectStoreFromDropdown(storeData[0], storeData[1], value);
+                }
+            } catch (e) {
+                log('Error handling store selection', e);
+            }
         });
         
         // Add validation message area
@@ -478,10 +617,454 @@
         validationMsg.style.color = '#cc1818';
         validationMsg.style.marginTop = '8px';
         validationMsg.style.fontSize = '14px';
+        validationMsg.style.display = 'none';
         fieldContainer.appendChild(validationMsg);
+    }
+    
+    // Initialize Map - Make styling match the design
+    function initializeMap(mapContainer, stores) {
+        // Custom map style
+        const mapStyles = [
+            {
+                featureType: "poi",
+                elementType: "labels",
+                stylers: [{ visibility: "off" }]
+            },
+            {
+                featureType: "transit",
+                elementType: "labels",
+                stylers: [{ visibility: "off" }]
+            }
+        ];
         
-        // Initial validation
-        updateValidationState(container);
+        // Create map with custom styling
+        map = new google.maps.Map(mapContainer, {
+            center: { lat: -29.0, lng: 24.0 },  // Center of South Africa
+            zoom: 5,
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: true,
+            styles: mapStyles,
+            zoomControlOptions: {
+                position: google.maps.ControlPosition.RIGHT_TOP
+            }
+        });
+        
+        markers = [];
+        let bounds = new google.maps.LatLngBounds();
+        let hasValidCoordinates = false;
+        
+        // Create info window for markers
+        const infoWindow = new google.maps.InfoWindow();
+        
+        let loadedMarkers = 0;
+        const totalStores = stores.length;
+        
+        // Process each store and add markers
+        stores.forEach(store => {
+            // Get store details
+            getStoreDetails(store.code).then(storeDetails => {
+                if (storeDetails.lat && storeDetails.lng) {
+                    // Define position
+                    const position = { lat: storeDetails.lat, lng: storeDetails.lng };
+                    
+                    // Create marker with classic API instead of AdvancedMarkerElement
+                    const marker = new google.maps.Marker({
+                        position: position,
+                        map: map,
+                        title: storeDetails.name,
+                        // Store custom info directly on the marker
+                        code: storeDetails.code,
+                        name: storeDetails.name,
+                        icon: {
+                            url: window.wc_postnet_delivery_params.map_marker_url,
+                            size: new google.maps.Size(40, 40),
+                            scaledSize: new google.maps.Size(40, 40),
+                            origin: new google.maps.Point(0, 0),
+                            anchor: new google.maps.Point(20, 40)
+                        }
+                    });
+                    
+                    // Create info window content
+                    const infoContent = `
+                        <div class="postnet-map-info">
+                            <strong>${storeDetails.name}</strong><br>
+                            ${storeDetails.address}<br>
+                            <button class="postnet-map-select-btn" 
+                                    onclick="selectMapStore('${storeDetails.code}', '${storeDetails.name.replace(/'/g, "\\'")}')">
+                                Select Store
+                            </button>
+                        </div>
+                    `;
+                    
+                    // Add click event for marker
+                    marker.addListener('click', () => {
+                        infoWindow.setContent(infoContent);
+                        infoWindow.open(map, marker);
+                    });
+                    
+                    markers.push(marker);
+                    bounds.extend(position);
+                    hasValidCoordinates = true;
+                    
+                    loadedMarkers++;
+                    
+                    // Fit bounds after all markers are added
+                    if (hasValidCoordinates && loadedMarkers === totalStores) {
+                        map.fitBounds(bounds);
+                        
+                        // Now that all markers are loaded, we can restore the selected store
+                        restoreSelectedStore();
+                    }
+                } else {
+                    loadedMarkers++;
+                    // Still check if this was the last store to process
+                    if (loadedMarkers === totalStores) {
+                        // If we have any valid markers
+                        if (markers.length > 0 && hasValidCoordinates) {
+                            map.fitBounds(bounds);
+                        }
+                        restoreSelectedStore();
+                    }
+                }
+            }).catch(error => {
+                log('Error getting store details', error);
+                loadedMarkers++;
+                // Still check if this was the last store
+                if (loadedMarkers === totalStores) {
+                    if (markers.length > 0 && hasValidCoordinates) {
+                        map.fitBounds(bounds);
+                    }
+                    restoreSelectedStore();
+                }
+            });
+        });
+        
+        // Add function to global scope to handle marker selection from info window
+        window.selectMapStore = function(code, name) {
+            selectStore(code, name);
+            infoWindow.close();
+        };
+    }
+    
+    // Function to restore selected store from localStorage
+    function restoreSelectedStore() {
+        const savedStore = localStorage.getItem('postnet_selected_store');
+        if (savedStore) {
+            try {
+                const storeData = JSON.parse(savedStore);
+                if (Array.isArray(storeData) && storeData.length >= 2) {
+                    log('Restoring selected store after markers loaded:', storeData[1]);
+                    selectStore(storeData[0], storeData[1]);
+                }
+            } catch (e) {
+                log('Error restoring selected store', e);
+            }
+        }
+    }
+    
+    // Render the list view
+    function renderListView(container, stores) {
+        container.innerHTML = '';
+        
+        // Create stores list container
+        const storesListDiv = document.createElement('div');
+        storesListDiv.className = 'postnet-stores-list';
+        container.appendChild(storesListDiv);
+        
+        let counter = 0;
+        let page = 1;
+        
+        let pageDiv = document.createElement('div');
+        pageDiv.className = 'postnet-list-page active';
+        pageDiv.dataset.page = page;
+        storesListDiv.appendChild(pageDiv);
+        
+        // Add stores to the list
+        stores.forEach(store => {
+            if (counter % 5 === 0 && counter > 0) {
+                // Create new page
+                page++;
+                pageDiv = document.createElement('div');
+                pageDiv.className = 'postnet-list-page';
+                pageDiv.dataset.page = page;
+                storesListDiv.appendChild(pageDiv);
+            }
+            
+            // Create store item
+            const storeItem = document.createElement('div');
+            storeItem.className = 'postnet-store-item';
+            storeItem.dataset.storeCode = store.code;
+            storeItem.dataset.storeName = store.name;
+            
+            // Store name with radio button
+            const storeNameDiv = document.createElement('div');
+            storeNameDiv.className = 'postnet-store-radio';
+            
+            // Create radio input
+            const radioInput = document.createElement('input');
+            radioInput.type = 'radio';
+            radioInput.name = 'postnet-store';
+            radioInput.value = store.code;
+            radioInput.id = `store-radio-${store.code}`;
+            
+            // Create label for the radio
+            const radioLabel = document.createElement('label');
+            radioLabel.className = 'postnet-store-name';
+            radioLabel.htmlFor = `store-radio-${store.code}`;
+            radioLabel.textContent = store.name;
+            
+            storeNameDiv.appendChild(radioInput);
+            storeNameDiv.appendChild(radioLabel);
+            storeItem.appendChild(storeNameDiv);
+            
+            // Loading indicator
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'postnet-store-loading';
+            loadingDiv.textContent = 'Loading store details...';
+            storeItem.appendChild(loadingDiv);
+            
+            pageDiv.appendChild(storeItem);
+            
+            // Load store details
+            getStoreDetails(store.code).then(storeDetails => {
+                // Remove loading indicator
+                loadingDiv.remove();
+                
+                // Add address
+                const addressDiv = document.createElement('div');
+                addressDiv.className = 'postnet-store-address-details';
+                addressDiv.innerHTML = `
+                    ${storeDetails.address}, ${storeDetails.city}<br>
+                    ${storeDetails.province}, ${storeDetails.postal_code}
+                `;
+                storeItem.appendChild(addressDiv);
+                
+                // Add click event to radio button
+                radioInput.addEventListener('change', function() {
+                    if (this.checked) {
+                        selectStore(store.code, store.name, storeItem);
+                    }
+                });
+                
+            }).catch(error => {
+                loadingDiv.textContent = 'Error loading store details.';
+                log('Error loading store details', error);
+            });
+            
+            // Add click handler to entire store item
+            storeItem.addEventListener('click', function(e) {
+                if (e.target !== radioInput) { // Only if the radio itself wasn't clicked
+                    radioInput.checked = true;
+                    selectStore(store.code, store.name, storeItem);
+                }
+            });
+            
+            counter++;
+        });
+        
+        // Add pagination if needed
+        if (page > 1) {
+            const paginationDiv = document.createElement('div');
+            paginationDiv.className = 'postnet-pagination';
+            
+            for (let i = 1; i <= page; i++) {
+                const pageBtn = document.createElement('span');
+                pageBtn.className = 'postnet-page-number' + (i === 1 ? ' active' : '');
+                pageBtn.dataset.page = i;
+                pageBtn.textContent = i;
+                paginationDiv.appendChild(pageBtn);
+            }
+            
+            storesListDiv.appendChild(paginationDiv);
+        }
+        
+        // Add validation message area
+        const validationMsg = document.createElement('div');
+        validationMsg.id = 'postnet-store-validation';
+        validationMsg.style.display = 'none';
+        container.appendChild(validationMsg);
+    }
+    
+    // Select a store
+    function selectStore(storeCode, storeName, listItem, mapMarker) {
+        log('Selecting store:', storeCode, storeName);
+        
+        // Store value
+        const storeValue = JSON.stringify([storeCode, storeName]);
+        
+        // Set form field value
+        const destinationStoreInput = document.getElementById('destination_store');
+        if (destinationStoreInput) {
+            destinationStoreInput.value = storeValue;
+        }
+        
+        // Save to local storage and cookie
+        localStorage.setItem('postnet_selected_store', storeValue);
+        document.cookie = 'postnet_selected_store=' + encodeURIComponent(storeValue) + '; path=/; max-age=86400';
+        
+        // Get full store details
+        getStoreDetails(storeCode).then(storeDetails => {
+            selectedStore = storeDetails;
+            
+            // Update selected store display
+            updateSelectedStoreDetails(storeDetails);
+            
+            // Update radio button selections
+            document.querySelectorAll('input[name="postnet-store"]').forEach(radio => {
+                radio.checked = radio.value === storeCode;
+            });
+            
+            // Update list item styling
+            document.querySelectorAll('.postnet-store-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            if (listItem) {
+                listItem.classList.add('selected');
+            } else {
+                const matchingItems = document.querySelectorAll(`.postnet-store-item[data-store-code="${storeCode}"]`);
+                matchingItems.forEach(item => item.classList.add('selected'));
+            }
+            
+            // Ensure hidden input for blocks checkout
+            ensureHiddenInput(storeValue);
+            
+            // Update validation state
+            updateValidationState();
+        }).catch(error => {
+            log('Error getting store details', error);
+        });
+    }
+    
+    // Update selected store details display
+    function updateSelectedStoreDetails(storeDetails) {
+        const detailsContainer = document.getElementById('postnet-selected-store-details');
+        if (!detailsContainer) return;
+        
+        if (!storeDetails) {
+            detailsContainer.classList.remove('active');
+            return;
+        }
+        
+        // Find current store index in markers array
+        const currentIndex = markers.findIndex(marker => marker.code === storeDetails.code);
+        
+        // Create navigation header with arrows and counter - handle case where currentIndex is -1
+        const actualIndex = currentIndex >= 0 ? currentIndex : 0;
+        const totalMarkers = markers.length || 1;  // Prevent showing "0 of 0"
+        
+        let html = `
+            <div class="postnet-store-details-container">
+                <div class="postnet-store-nav">
+                    <button type="button" class="postnet-nav-btn postnet-prev-store" ${actualIndex <= 0 ? 'disabled' : ''} aria-label="Previous store">
+                        <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"></path></svg>
+                    </button>
+                    <div class="postnet-location-counter">${actualIndex + 1} of ${totalMarkers}</div>
+                    <button type="button" class="postnet-nav-btn postnet-next-store" ${actualIndex >= markers.length-1 ? 'disabled' : ''} aria-label="Next store">
+                        <svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"></path></svg>
+                    </button>
+                </div>
+                
+                <div class="postnet-store-content">
+                    <div class="postnet-store-header">${storeDetails.name}</div>
+                    
+                    <div class="postnet-store-section">
+                        <div class="postnet-section-title">Address</div>
+                        <div class="postnet-store-address">
+                            ${storeDetails.address}<br>
+                            ${storeDetails.city}, ${storeDetails.province}<br>
+                            ${storeDetails.postal_code}
+                        </div>
+                    </div>
+                    
+                    ${storeDetails.telephone || storeDetails.email ? `
+                    <div class="postnet-store-section">
+                        <div class="postnet-section-title">Contact</div>
+                        <div class="postnet-store-contact">
+                            ${storeDetails.telephone ? `<strong>Tel:</strong> ${storeDetails.telephone}<br>` : ''}
+                            ${storeDetails.email ? `<strong>Email:</strong> ${storeDetails.email}` : ''}
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+        
+        detailsContainer.innerHTML = html;
+        detailsContainer.classList.add('active');
+        
+        // Add event listeners for navigation buttons - only if we have a valid index
+        if (currentIndex >= 0) {
+            const prevButton = detailsContainer.querySelector('.postnet-prev-store');
+            const nextButton = detailsContainer.querySelector('.postnet-next-store');
+            
+            if (prevButton) {
+                prevButton.addEventListener('click', () => {
+                    if (currentIndex > 0) {
+                        // Automatically select the previous store
+                        const prevMarker = markers[currentIndex - 1];
+                        if (prevMarker && prevMarker.code) {
+                            selectStore(prevMarker.code, prevMarker.name, null, prevMarker);
+                        }
+                    }
+                });
+            }
+            
+            if (nextButton) {
+                nextButton.addEventListener('click', () => {
+                    if (currentIndex < markers.length - 1) {
+                        // Automatically select the next store
+                        const nextMarker = markers[currentIndex + 1];
+                        if (nextMarker && nextMarker.code) {
+                            selectStore(nextMarker.code, nextMarker.name, null, nextMarker);
+                        }
+                    }
+                });
+            }
+        }
+    }
+    
+    // Get store details via AJAX
+    function getStoreDetails(storeCode) {
+        // Check cache first
+        if (storeDetails[storeCode]) {
+            return Promise.resolve(storeDetails[storeCode]);
+        }
+        
+        return new Promise((resolve, reject) => {
+            fetch(wc_postnet_delivery_params.ajax_url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    action: 'wc_postnet_delivery_store_details',
+                    security: wc_postnet_delivery_params.nonce,
+                    store_code: storeCode
+                })
+            })
+            .then(function(response) {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok: ' + response.status);
+                }
+                return response.json();
+            })
+            .then(function(data) {
+                if (data.success && data.data) {
+                    // Cache the result
+                    storeDetails[storeCode] = data.data;
+                    resolve(data.data);
+                } else {
+                    throw new Error(data.data ? data.data.message : 'Failed to get store details');
+                }
+            })
+            .catch(function(error) {
+                log('Error fetching store details', error);
+                reject(error);
+            });
+        });
     }
     
     // Ensure hidden input exists with the correct value
@@ -510,13 +1093,13 @@
     }
     
     // Update the validation state
-    function updateValidationState(container) {
+    function updateValidationState() {
         const validationMsg = document.getElementById('postnet-store-validation');
         const selectedStore = localStorage.getItem('postnet_selected_store');
         
         if (validationMsg) {
             if (!selectedStore) {
-                //validationMsg.textContent = 'Please select a destination store';
+                validationMsg.textContent = 'Please select a destination store';
                 validationMsg.style.display = 'block';
                 
                 // Attempt to find and disable the place order button
@@ -582,4 +1165,5 @@
         });
         container.appendChild(retryButton);
     }
+
 })();

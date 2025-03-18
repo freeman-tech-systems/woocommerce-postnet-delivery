@@ -45,6 +45,9 @@ By using this plugin, you agree to PostNet's terms of service and privacy policy
 Setup and usage instructions can be found at [PostNet WooCommerce Plugin](https://www.postnet.co.za/woocommerce-app-info).
 
 == Changelog ==
+= 1.0.2 =
+* Added google map search for picking the destination store
+
 = 1.0.1 =
 * Added support for the checkout blocks on the checkout page
 
