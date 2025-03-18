@@ -4,19 +4,13 @@
  */
 (function() {
     // Configuration
-    const DEBUG = true;
-    const CHECK_INTERVAL = 1000; // ms
-    const MAX_ATTEMPTS = 30;
+    const DEBUG = false;
     
     // State variables
-    let checkAttempts = 0;
-    let checkInterval = null;
     let observer = null;
     let map = null;
     let markers = [];
     let selectedMarker = null;
-    let selectedStore = null;
-    let allStores = [];
     let storeDetails = {}; // Cache for store details
     
     // Debug logging helper
@@ -45,18 +39,6 @@
         
         // First check
         checkShippingMethod();
-        
-        // Set up continuous checking
-        if (checkInterval) clearInterval(checkInterval);
-        checkInterval = setInterval(function() {
-            checkAttempts++;
-            if (checkAttempts > MAX_ATTEMPTS) {
-                clearInterval(checkInterval);
-                log('Max check attempts reached, stopping automatic checks');
-                return;
-            }
-            checkShippingMethod();
-        }, CHECK_INTERVAL);
         
         // Set up event listeners for shipping method changes
         setupEventListeners();
@@ -678,174 +660,87 @@
         let loadedMarkers = 0;
         const totalStores = stores.length;
         
-        // Define custom marker icon with better site URL handling
-        let markerIconUrl;
-        
-        // Create an array of possible URLs to try based on localized data
-        const possibleUrls = [];
-        
-        // Try getting the site URL from the localized parameters
-        if (window.wc_postnet_delivery_params) {
-            // Log available parameters to help debug
-            log('Available parameters for URL construction:', {
-                site_url: window.wc_postnet_delivery_params.site_url || 'NOT SET',
-                home_url: window.wc_postnet_delivery_params.home_url || 'NOT SET',
-                plugin_url: window.wc_postnet_delivery_params.plugin_url || 'NOT SET',
-                ajax_url: window.wc_postnet_delivery_params.ajax_url || 'NOT SET'
-            });
-            
-            // Build possible URLs in order of preference
-            if (window.wc_postnet_delivery_params.plugin_url) {
-                possibleUrls.push(window.wc_postnet_delivery_params.plugin_url + '/assets/map-marker.png');
-            }
-            
-            if (window.wc_postnet_delivery_params.site_url) {
-                possibleUrls.push(window.wc_postnet_delivery_params.site_url + '/wp-content/plugins/woocommerce-postnet-delivery/assets/map-marker.png');
-            }
-            
-            if (window.wc_postnet_delivery_params.home_url) {
-                possibleUrls.push(window.wc_postnet_delivery_params.home_url + '/wp-content/plugins/woocommerce-postnet-delivery/assets/map-marker.png');
-            }
-            
-            // If we have ajax_url, try to extract the domain and path to WordPress
-            if (window.wc_postnet_delivery_params.ajax_url) {
-                try {
-                    // Parse the ajax URL to get the WordPress base path
-                    const ajaxUrl = window.wc_postnet_delivery_params.ajax_url;
-                    const ajaxUrlObj = new URL(ajaxUrl, window.location.origin);
-                    // ajax-admin.php is normally in /wp-admin/, so we can find the WordPress base path
-                    const wpBasePath = ajaxUrlObj.pathname.replace(/\/wp-admin\/.*$/, '');
+        // Process each store and add markers
+        stores.forEach(store => {
+            // Get store details
+            getStoreDetails(store.code).then(storeDetails => {
+                if (storeDetails.lat && storeDetails.lng) {
+                    // Define position
+                    const position = { lat: storeDetails.lat, lng: storeDetails.lng };
                     
-                    possibleUrls.push(window.location.origin + wpBasePath + '/wp-content/plugins/woocommerce-postnet-delivery/assets/map-marker.png');
-                    log('Constructed URL from ajax_url path:', window.location.origin + wpBasePath + '/wp-content/plugins/woocommerce-postnet-delivery/assets/map-marker.png');
-                } catch (e) {
-                    log('Error parsing ajax_url', e);
+                    // Create marker with classic API instead of AdvancedMarkerElement
+                    const marker = new google.maps.Marker({
+                        position: position,
+                        map: map,
+                        title: storeDetails.name,
+                        // Store custom info directly on the marker
+                        code: storeDetails.code,
+                        name: storeDetails.name,
+                        icon: {
+                            url: window.wc_postnet_delivery_params.map_marker_url,
+                            size: new google.maps.Size(40, 40),
+                            scaledSize: new google.maps.Size(40, 40),
+                            origin: new google.maps.Point(0, 0),
+                            anchor: new google.maps.Point(20, 40)
+                        }
+                    });
+                    
+                    // Create info window content
+                    const infoContent = `
+                        <div class="postnet-map-info">
+                            <strong>${storeDetails.name}</strong><br>
+                            ${storeDetails.address}<br>
+                            <button class="postnet-map-select-btn" 
+                                    onclick="selectMapStore('${storeDetails.code}', '${storeDetails.name.replace(/'/g, "\\'")}')">
+                                Select Store
+                            </button>
+                        </div>
+                    `;
+                    
+                    // Add click event for marker
+                    marker.addListener('click', () => {
+                        infoWindow.setContent(infoContent);
+                        infoWindow.open(map, marker);
+                    });
+                    
+                    markers.push(marker);
+                    bounds.extend(position);
+                    hasValidCoordinates = true;
+                    
+                    loadedMarkers++;
+                    
+                    // Fit bounds after all markers are added
+                    if (hasValidCoordinates && loadedMarkers === totalStores) {
+                        map.fitBounds(bounds);
+                        
+                        // Now that all markers are loaded, we can restore the selected store
+                        restoreSelectedStore();
+                    }
+                } else {
+                    loadedMarkers++;
+                    // Still check if this was the last store to process
+                    if (loadedMarkers === totalStores) {
+                        // If we have any valid markers
+                        if (markers.length > 0 && hasValidCoordinates) {
+                            map.fitBounds(bounds);
+                        }
+                        restoreSelectedStore();
+                    }
                 }
-            }
-        }
-        
-        // Add fallback URLs
-        possibleUrls.push(
-            window.location.origin + '/wp-content/plugins/woocommerce-postnet-delivery/assets/map-marker.png',
-            '/wp-content/plugins/woocommerce-postnet-delivery/assets/map-marker.png'
-        );
-        
-        // Special handling for subdirectory installations
-        if (window.location.pathname.includes('/wp-admin/')) {
-            const adminPath = window.location.pathname;
-            const wpBase = adminPath.substring(0, adminPath.indexOf('/wp-admin/'));
-            possibleUrls.push(window.location.origin + wpBase + '/wp-content/plugins/woocommerce-postnet-delivery/assets/map-marker.png');
-        }
-        
-        // Custom function to try each URL until one works
-        function findWorkingMarkerUrl(urlIndex) {
-            if (urlIndex >= possibleUrls.length) {
-                log('All marker image URLs failed, using default Google marker');
-                processStores(null);
-                return;
-            }
-            
-            const testUrl = possibleUrls[urlIndex];
-            log('Testing marker image URL:', testUrl);
-            
-            const testImg = new Image();
-            testImg.onload = function() {
-                log('✅ Found working marker image URL:', testUrl);
-                processStores(testUrl);
-            };
-            testImg.onerror = function() {
-                log('❌ Marker image URL failed:', testUrl);
-                findWorkingMarkerUrl(urlIndex + 1);
-            };
-            testImg.src = testUrl;
-        }
-        
-        // Process stores with the found URL or null for default marker
-        function processStores(foundUrl) {
-            markerIconUrl = foundUrl;
-            
-            let loadedMarkers = 0;
-            const totalStores = stores.length;
-            
-            // Process each store and add markers
-            stores.forEach(store => {
-                // Get store details
-                getStoreDetails(store.code).then(storeDetails => {
-                    if (storeDetails.lat && storeDetails.lng) {
-                        // Create marker (with or without custom icon)
-                        let markerOptions = {
-                            position: { lat: storeDetails.lat, lng: storeDetails.lng },
-                            map: map,
-                            title: storeDetails.name,
-                            animation: google.maps.Animation.DROP,
-                            customInfo: {
-                                code: storeDetails.code,
-                                name: storeDetails.name
-                            }
-                        };
-                        
-                        // Add custom icon if available
-                        if (markerIconUrl) {
-                            try {
-                                markerOptions.icon = {
-                                    url: markerIconUrl,
-                                    scaledSize: new google.maps.Size(30, 40),
-                                    origin: new google.maps.Point(0, 0),
-                                    anchor: new google.maps.Point(15, 40)
-                                };
-                            } catch (e) {
-                                log('Error setting custom icon, will use default', e);
-                            }
-                        }
-                        
-                        const marker = new google.maps.Marker(markerOptions);
-                        
-                        // Create info window content
-                        const infoContent = `
-                            <div class="postnet-map-info">
-                                <strong>${storeDetails.name}</strong><br>
-                                ${storeDetails.address}<br>
-                                <button class="postnet-map-select-btn" 
-                                        onclick="selectMapStore('${storeDetails.code}', '${storeDetails.name.replace(/'/g, "\\'")}')">
-                                    Select Store
-                                </button>
-                            </div>
-                        `;
-                        
-                        marker.addListener('click', () => {
-                            infoWindow.setContent(infoContent);
-                            infoWindow.open(map, marker);
-                        });
-                        
-                        markers.push(marker);
-                        bounds.extend(marker.getPosition());
-                        hasValidCoordinates = true;
+            }).catch(error => {
+                log('Error getting store details', error);
+                loadedMarkers++;
+                // Still check if this was the last store
+                if (loadedMarkers === totalStores) {
+                    if (markers.length > 0 && hasValidCoordinates) {
+                        map.fitBounds(bounds);
                     }
-                    
-                    loadedMarkers++;
-                    if (loadedMarkers === totalStores) {
-                        if (markers.length > 0 && hasValidCoordinates) {
-                            map.fitBounds(bounds);
-                        }
-                        restoreSelectedStore();
-                    }
-                }).catch(error => {
-                    log('Error getting store details', error);
-                    loadedMarkers++;
-                    if (loadedMarkers === totalStores) {
-                        if (markers.length > 0 && hasValidCoordinates) {
-                            map.fitBounds(bounds);
-                        }
-                        restoreSelectedStore();
-                    }
-                });
+                    restoreSelectedStore();
+                }
             });
-        }
+        });
         
-        // Start the marker URL discovery process
-        findWorkingMarkerUrl(0);
-        
-        // Add function to global scope to handle marker selection
+        // Add function to global scope to handle marker selection from info window
         window.selectMapStore = function(code, name) {
             selectStore(code, name);
             infoWindow.close();
@@ -1032,52 +927,6 @@
                 matchingItems.forEach(item => item.classList.add('selected'));
             }
             
-            // Update map markers using the same URL that was found to work
-            if (markers.length > 0) {
-                // Make all markers default size
-                markers.forEach(marker => {
-                    try {
-                        // For markers with custom info
-                        if (marker.customInfo) {
-                            if (marker.customInfo.code === storeCode) {
-                                // This is the selected marker - make it larger
-                                selectedMarker = marker;
-                                
-                                if (marker.getIcon()) {
-                                    // If we have a custom icon, make it larger
-                                    const icon = marker.getIcon();
-                                    const newIcon = {
-                                        url: icon.url,
-                                        scaledSize: new google.maps.Size(40, 53), // Larger for selected
-                                        origin: new google.maps.Point(0, 0),
-                                        anchor: new google.maps.Point(20, 53)
-                                    };
-                                    marker.setIcon(newIcon);
-                                }
-                                
-                                // Center map on selected marker
-                                if (map) {
-                                    map.panTo(marker.getPosition());
-                                    map.setZoom(15);
-                                }
-                            } else if (marker.getIcon()) {
-                                // Reset other markers to normal size
-                                const icon = marker.getIcon();
-                                const newIcon = {
-                                    url: icon.url,
-                                    scaledSize: new google.maps.Size(30, 40), // Normal size
-                                    origin: new google.maps.Point(0, 0),
-                                    anchor: new google.maps.Point(15, 40)
-                                };
-                                marker.setIcon(newIcon);
-                            }
-                        }
-                    } catch (e) {
-                        log('Error updating marker icon', e);
-                    }
-                });
-            }
-            
             // Ensure hidden input for blocks checkout
             ensureHiddenInput(storeValue);
             
@@ -1099,8 +948,7 @@
         }
         
         // Find current store index in markers array
-        const currentIndex = markers.findIndex(marker => 
-            marker.customInfo && marker.customInfo.code === storeDetails.code);
+        const currentIndex = markers.findIndex(marker => marker.code === storeDetails.code);
         
         // Create navigation header with arrows and counter - handle case where currentIndex is -1
         const actualIndex = currentIndex >= 0 ? currentIndex : 0;
@@ -1156,8 +1004,8 @@
                     if (currentIndex > 0) {
                         // Automatically select the previous store
                         const prevMarker = markers[currentIndex - 1];
-                        if (prevMarker && prevMarker.customInfo) {
-                            selectStore(prevMarker.customInfo.code, prevMarker.customInfo.name, null, prevMarker);
+                        if (prevMarker && prevMarker.code) {
+                            selectStore(prevMarker.code, prevMarker.name, null, prevMarker);
                         }
                     }
                 });
@@ -1168,8 +1016,8 @@
                     if (currentIndex < markers.length - 1) {
                         // Automatically select the next store
                         const nextMarker = markers[currentIndex + 1];
-                        if (nextMarker && nextMarker.customInfo) {
-                            selectStore(nextMarker.customInfo.code, nextMarker.customInfo.name, null, nextMarker);
+                        if (nextMarker && nextMarker.code) {
+                            selectStore(nextMarker.code, nextMarker.name, null, nextMarker);
                         }
                     }
                 });

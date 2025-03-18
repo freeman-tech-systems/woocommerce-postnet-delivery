@@ -1044,7 +1044,7 @@ function wc_postnet_delivery_enqueue_frontend_scripts() {
     if (!empty($google_api_key)) {
       wp_enqueue_script(
         'google-maps',
-        'https://maps.googleapis.com/maps/api/js?key=' . esc_attr($google_api_key) . '&libraries=places',
+        'https://maps.googleapis.com/maps/api/js?key=' . esc_attr($google_api_key) . '&libraries=places,marker',
         array(),
         null,
         true
@@ -1063,9 +1063,7 @@ function wc_postnet_delivery_enqueue_frontend_scripts() {
         'version' => $version,
         'has_google_maps' => !empty($google_api_key),
         'google_api_key' => $google_api_key,
-        'plugin_url' => plugins_url('', __DIR__), // Plugin directory URL
-        'site_url' => get_site_url(), // WordPress site URL from DB
-        'home_url' => home_url(), // WordPress home URL from DB
+        'map_marker_url' => plugins_url('assets/map-marker.png', __FILE__)
       )
     );
     wp_enqueue_script('wc-postnet-delivery-blocks-js');
