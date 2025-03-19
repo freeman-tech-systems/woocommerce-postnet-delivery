@@ -2,7 +2,7 @@
 Contributors: freemantech
 Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
-Tested up to: 6.6.1
+Tested up to: 6.7.2
 Requires PHP: 7.4
 Stable tag: 1.0.4
 License: GPL v2
