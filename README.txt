@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.6.1
 Requires PHP: 7.4
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
