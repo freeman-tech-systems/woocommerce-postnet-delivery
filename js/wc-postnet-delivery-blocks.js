@@ -20,6 +20,16 @@
         }
     }
     
+    // Helper function to get selected store from localStorage
+    function getSelectedStore() {
+        return localStorage.getItem('postnet_selected_store') || '';
+    }
+    
+    // Helper function to set selected store in localStorage
+    function setSelectedStore(store) {
+        selectStore(store.code, store.name);
+    }
+    
     // Initialize when DOM is ready
     document.addEventListener('DOMContentLoaded', function() {
         log('DOM loaded, initializing...');
@@ -56,7 +66,7 @@
             
             registerCheckoutFilters('postnet-delivery-options', {
                 additionalCartData: function(data) {
-                    const selectedStore = localStorage.getItem('postnet_selected_store') || '';
+                    const selectedStore = getSelectedStore();
                     log('Adding store data to cart', selectedStore);
                     return {
                         ...data,
@@ -66,7 +76,7 @@
                 
                 validateShippingData: function(shippingData) {
                     if (isPostNetShippingSelected()) {
-                        const selectedStore = localStorage.getItem('postnet_selected_store');
+                        const selectedStore = getSelectedStore();
                         if (!selectedStore) {
                             log('Validation failed: No store selected');
                             return {
@@ -137,7 +147,7 @@
                 log('Form submission detected');
                 
                 // If PostNet is selected but no store chosen, prevent submission
-                if (isPostNetShippingSelected() && !localStorage.getItem('postnet_selected_store')) {
+                if (isPostNetShippingSelected() && !getSelectedStore()) {
                     log('Preventing submission: No store selected');
                     e.preventDefault();
                     alert('Please select a PostNet destination store.');
@@ -479,6 +489,7 @@
             log('Stores response received', data);
             if (data.success && data.data && data.data.length > 0) {
                 allStores = data.data;
+                if (!getSelectedStore()) { setSelectedStore(data.data[0]); }
                 renderStoreSelector(container, data.data);
             } else {
                 throw new Error('Invalid store data received');
@@ -586,7 +597,7 @@
         });
         
         // Set previously selected store if exists
-        const savedStore = localStorage.getItem('postnet_selected_store');
+        const savedStore = getSelectedStore();
         if (savedStore) {
             select.value = savedStore;
             log('Restored previously selected store', savedStore);
@@ -749,7 +760,7 @@
     
     // Function to restore selected store from localStorage
     function restoreSelectedStore() {
-        const savedStore = localStorage.getItem('postnet_selected_store');
+        const savedStore = getSelectedStore();
         if (savedStore) {
             try {
                 const storeData = JSON.parse(savedStore);
@@ -1095,7 +1106,7 @@
     // Update the validation state
     function updateValidationState() {
         const validationMsg = document.getElementById('postnet-store-validation');
-        const selectedStore = localStorage.getItem('postnet_selected_store');
+        const selectedStore = getSelectedStore();
         
         if (validationMsg) {
             if (!selectedStore) {
