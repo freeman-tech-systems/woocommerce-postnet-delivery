@@ -2,9 +2,9 @@
 Contributors: freemantech
 Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
-Tested up to: 6.6.1
+Tested up to: 6.7.2
 Requires PHP: 7.4
-Stable tag: 1.0.3
+Stable tag: 1.0.4
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -45,6 +45,9 @@ By using this plugin, you agree to PostNet's terms of service and privacy policy
 Setup and usage instructions can be found at [PostNet WooCommerce Plugin](https://www.postnet.co.za/woocommerce-app-info).
 
 == Changelog ==
+= 1.0.4 =
+* Auto select the closest destination store for PostNet to PostNet deliveries
+
 = 1.0.3 =
 * Fix the map marker on the map search
 
