@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
  * Plugin Name: Delivery Options For PostNet
  * Plugin URI: https://github.com/freeman-tech-systems/woocommerce-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
- * Version: 1.0.5
+ * Version: 1.0.6
  * Author: Freeman Tech Systems
  * Author URI: https://github.com/freeman-tech-systems
  * License: GPL2
@@ -247,7 +247,7 @@ function wc_postnet_delivery_enqueue_scripts($hook) {
   // Check if we are on the settings page of our plugin
   if ($hook == 'woocommerce_page_wc_postnet_delivery') {
     // Enqueue our script
-    wp_enqueue_script('wc-postnet-delivery-options-js', plugin_dir_url(__FILE__) . 'js/wc-postnet-delivery-options.js', array('jquery'), '1.0.5', true);
+    wp_enqueue_script('wc-postnet-delivery-options-js', plugin_dir_url(__FILE__) . 'js/wc-postnet-delivery-options.js', array('jquery'), '1.0.6', true);
     
     // Enqueue SweetAlert for nice alerts
     wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', array(), '11.0', true);
@@ -830,20 +830,49 @@ function wc_postnet_delivery_order_received_page($order) {
 }
 
 function wc_postnet_delivery_collection_notification($order_id){
-  if (!$order_id) return;
+  if (!$order_id) {
+    error_log('PostNet: No order ID provided, returning early');
+    return;
+  }
   
   // Get an instance of the WC_Order object
   $order = wc_get_order($order_id);
+  if (!$order) {
+    error_log('PostNet: Could not get order object for ID: ' . $order_id);
+    return;
+  }
   
   // Get delivery options
   $options = get_option('wc_postnet_delivery_options');
   $postal_code = $order->get_shipping_postcode();
+  
   $main_check = $postal_code ? json_decode(wc_postnet_fetch_url('https://pnsa.restapis.co.za/public/is-main?postcode='.$postal_code)) : null;
   $is_main = $main_check ? $main_check->main : false;
+  
   $chosen_methods = WC()->session->get( 'chosen_shipping_methods' );
   $chosen_method = ! empty( $chosen_methods ) ? $chosen_methods[0] : '';
   
-  if (empty($chosen_method)) return;
+  // If no chosen method in session, try to get it from the order
+  if (empty($chosen_method)) {
+    // Try to get from order meta first
+    $chosen_method = $order->get_meta('_chosen_shipping_method');
+    if (empty($chosen_method)) {
+      // If not in meta, try to get from shipping items
+      $shipping_items = $order->get_items('shipping');
+      if (!empty($shipping_items)) {
+        $shipping_item = reset($shipping_items);
+        $chosen_method = $shipping_item->get_method_id() . ':' . $shipping_item->get_instance_id();
+      }
+    }
+    error_log('PostNet: Got shipping method from order: ' . $chosen_method);
+  }
+  
+  if (empty($chosen_method)) {
+    error_log('PostNet: No shipping method found in order or session, returning early');
+    return;
+  }
+  
+  error_log('PostNet: Using shipping method: ' . $chosen_method);
   
   $rate = null;
   $zone = wc_postnet_delivery_get_zone();
@@ -856,6 +885,13 @@ function wc_postnet_delivery_collection_notification($order_id){
   }
   
   if (!$rate) return;
+  
+  // If the shipping method is not POSTNET_SHIPPING_STORE, unset the destination store
+  if ($rate->title !== POSTNET_SHIPPING_STORE) {
+    delete_post_meta($order_id, 'Destination Store');
+    error_log('PostNet: Unsetting destination store as shipping method is not PostNet to PostNet');
+    return;
+  }
   
   $service_type = ($is_main ? 'main' : 'regional').'_centre_';
   $destination_store = json_decode(get_post_meta( $order_id, 'Destination Store', true ));
@@ -938,6 +974,7 @@ function wc_postnet_delivery_collection_notification($order_id){
   } else {
     $response_body = wp_remote_retrieve_body($response);
     $response = json_decode($response_body);
+    
     if (isset($response->success) && $response->success){
       update_post_meta( $order_id, 'Waybill Number', sanitize_text_field( $response->waybill_number ) );
       update_post_meta( $order_id, 'Tracking URL', sanitize_text_field( $response->tracking_url ) );

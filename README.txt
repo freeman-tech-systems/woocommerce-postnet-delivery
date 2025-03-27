@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.7.2
 Requires PHP: 7.4
-Stable tag: 1.0.5
+Stable tag: 1.0.6
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -45,6 +45,9 @@ By using this plugin, you agree to PostNet's terms of service and privacy policy
 Setup and usage instructions can be found at [PostNet WooCommerce Plugin](https://www.postnet.co.za/woocommerce-app-info).
 
 == Changelog ==
+= 1.0.6 =
+* Fix destination store bug
+
 = 1.0.5 =
 * Fix waybill and tracking links on order
 
