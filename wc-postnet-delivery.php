@@ -782,8 +782,7 @@ function wc_postnet_delivery_checkout_field_update_order_meta($order_id) {
 }
 
 function wc_postnet_delivery_checkout_field_display_admin_order_meta($order) {
-  $store = json_decode(get_post_meta($order->get_id(), 'Destination Store', true));
-  echo '<p><strong>' . esc_html__('Destination Store', 'delivery-options-postnet-woocommerce') . ':</strong> ' . esc_html($store[1]) . '</p>';
+  wc_postnet_delivery_order_received_page($order);
 }
 
 function wc_postnet_delivery_validations() {
