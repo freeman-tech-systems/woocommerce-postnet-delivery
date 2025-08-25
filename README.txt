@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.7.2
 Requires PHP: 7.4
-Stable tag: 1.0.7
+Stable tag: 1.0.8
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -31,6 +31,7 @@ By using this plugin, you agree to PostNet's terms of service and privacy policy
 * Easy Configuration: Simple setup and configuration in the WooCommerce settings.
 * WooCommerce Compatibility: Compatible with the latest version of WooCommerce.
 * Customizable: Modify the shipping methods according to your store's needs.
+* Multi Site Mode: Support for multiple collection addresses with delayed waybill creation until order completion.
 
 == Installation ==
 1. Download the plugin zip file from the [releases page](https://github.com/freeman-tech-systems/woocommerce-postnet-delivery/releases).
@@ -44,7 +45,55 @@ By using this plugin, you agree to PostNet's terms of service and privacy policy
 == Usage ==
 Setup and usage instructions can be found at [PostNet WooCommerce Plugin](https://www.postnet.co.za/woocommerce-app-info).
 
+== Multi Site Mode ==
+The plugin now supports Multi Site Mode, which allows you to:
+
+* Configure multiple collection addresses instead of using PostNet stores as the origin
+* Delay waybill creation until orders are marked as "Completed"
+* Select specific collection addresses for each order in the admin panel
+
+To enable Multi Site Mode:
+
+1. Go to WooCommerce > PostNet Delivery in your WordPress admin
+2. Check the "Enable Multi Site Mode" option
+3. Configure your collection addresses with the required fields:
+   - Street Address
+   - Additional Address Info (optional)
+   - Country Code
+   - Suburb/City
+   - Postal Code
+   - Company/Business Name
+   - Contact Number
+   - Contact Person
+4. Save your settings
+
+### Validation Features
+
+The plugin includes several validation mechanisms to ensure proper setup:
+
+* **Order Completion Blocking**: Orders cannot be marked as "Completed" without selecting a collection address
+* **Visual Indicators**: Clear visual feedback shows whether collection addresses are properly configured
+* **Real-time Validation**: JavaScript validation prevents status changes without proper address selection
+* **Error Messages**: Helpful error messages guide users through the required setup process
+
+When Multi Site Mode is enabled:
+* Waybills will not be created automatically when orders are placed
+* You must select a collection address for each order in the admin panel
+* **Order completion is blocked until a collection address is selected**
+* Waybills will only be created when the order status is changed to "Completed"
+* The selected collection address will be used as the originating address on the waybill
+
 == Changelog ==
+= 1.0.8 =
+* Added Multi Site Mode support
+* Added multiple collection addresses configuration
+* Delayed waybill creation until order completion in Multi Site Mode
+* Added collection address selection in admin order panel
+* Enhanced API integration with collection address data
+* Refactored waybill creation logic to eliminate code duplication
+* Fixed fatal error when WC()->session is null during order status changes
+* Added comprehensive error handling and logging for better debugging
+
 = 1.0.7 =
 * Force update
 

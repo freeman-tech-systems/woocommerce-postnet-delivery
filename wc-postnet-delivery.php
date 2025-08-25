@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
  * Plugin Name: Delivery Options For PostNet
  * Plugin URI: https://github.com/freeman-tech-systems/woocommerce-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
- * Version: 1.0.7
+ * Version: 1.0.8
  * Author: Freeman Tech Systems
  * Author URI: https://github.com/freeman-tech-systems
  * License: GPL2
@@ -32,6 +32,10 @@ add_action('woocommerce_order_details_after_order_table', 'wc_postnet_delivery_o
 add_action('woocommerce_process_product_meta', 'wc_postnet_delivery_save_product_fields');
 add_action('woocommerce_product_options_shipping', 'wc_postnet_delivery_product_fields');
 add_action('woocommerce_thankyou', 'wc_postnet_delivery_collection_notification', 10, 1);
+add_action('woocommerce_order_status_completed', 'wc_postnet_delivery_create_waybill_on_completion', 10, 1);
+add_action('woocommerce_admin_order_data_after_billing_address', 'wc_postnet_delivery_admin_collection_address_field', 10, 1);
+add_action('woocommerce_process_shop_order_meta', 'wc_postnet_delivery_save_admin_collection_address_field', 10, 2);
+add_action('woocommerce_before_order_object_save', 'wc_postnet_delivery_validate_collection_address_before_completion', 10, 2);
 add_action('wp_ajax_nopriv_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 add_action('wp_ajax_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 add_action('wp_ajax_validate_google_api_key', 'wc_postnet_validate_google_api_key');
@@ -69,7 +73,9 @@ function wc_postnet_delivery_settings_init() {
         'postnet_store' => '',
         'postnet_api_key' => '',
         'postnet_api_passcode' => '',
-        'google_api_key' => ''
+        'google_api_key' => '',
+        'multi_site_mode' => false,
+        'collection_addresses' => array()
       )
     )
   );
@@ -222,7 +228,109 @@ function wc_postnet_delivery_options_page() {
             <p class="description"><?php echo esc_html__('Enter your Google Maps API key with Maps JavaScript API enabled.', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
+        <tr>
+          <th scope="row"><label for="multi_site_mode"><?php echo esc_html__('Multi Site Mode', 'delivery-options-postnet-woocommerce'); ?></label></th>
+          <td>
+            <label>
+              <input type="checkbox" name="wc_postnet_delivery_options[multi_site_mode]" value="1" <?php checked(isset($options['multi_site_mode']) ? $options['multi_site_mode'] : false); ?> />
+              <?php echo esc_html__('Enable Multi Site Mode', 'delivery-options-postnet-woocommerce'); ?>
+            </label>
+            <p class="description"><?php echo esc_html__('When enabled, waybills will only be created when order status is changed to Completed and a collection address is selected.', 'delivery-options-postnet-woocommerce'); ?></p>
+          </td>
+        </tr>
       </table>
+      
+      <!-- Collection Addresses Section -->
+      <div id="collection-addresses-section" style="<?php echo (isset($options['multi_site_mode']) && $options['multi_site_mode']) ? 'display: block;' : 'display: none;'; ?>">
+        <h2><?php echo esc_html__('Collection Addresses', 'delivery-options-postnet-woocommerce'); ?></h2>
+        <p><?php echo esc_html__('Configure multiple collection addresses for Multi Site Mode. These addresses will be used as the originating address on waybills instead of PostNet stores.', 'delivery-options-postnet-woocommerce'); ?></p>
+        
+        <div id="collection-addresses-container">
+          <?php
+          $collection_addresses = isset($options['collection_addresses']) ? $options['collection_addresses'] : array();
+          if (empty($collection_addresses)) {
+            $collection_addresses = array(array(
+              'sender_street_address' => '',
+              'sender_other_address' => '',
+              'sender_country_code' => 'ZA',
+              'sender_suburb' => '',
+              'sender_postal_code' => '',
+              'sender_name' => '',
+              'sender_contact_number' => '',
+              'sender_contact_person' => ''
+            ));
+          }
+          
+          foreach ($collection_addresses as $index => $address) {
+            ?>
+            <div class="collection-address" data-index="<?php echo esc_attr($index); ?>">
+              <h3><?php echo esc_html__('Collection Address', 'delivery-options-postnet-woocommerce'); ?> #<?php echo esc_html($index + 1); ?></h3>
+              <table class="form-table">
+                <tr>
+                  <th scope="row"><label for="sender_street_address_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Street Address', 'delivery-options-postnet-woocommerce'); ?></label></th>
+                  <td>
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_street_address]" id="sender_street_address_<?php echo esc_attr($index); ?>" style="width:400px;" value="<?php echo esc_attr($address['sender_street_address']); ?>" required />
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row"><label for="sender_other_address_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Additional Address Info', 'delivery-options-postnet-woocommerce'); ?></label></th>
+                  <td>
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_other_address]" id="sender_other_address_<?php echo esc_attr($index); ?>" style="width:400px;" value="<?php echo esc_attr($address['sender_other_address']); ?>" />
+                    <p class="description"><?php echo esc_html__('Optional: Additional address information like unit number, building name, etc.', 'delivery-options-postnet-woocommerce'); ?></p>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row"><label for="sender_country_code_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Country Code', 'delivery-options-postnet-woocommerce'); ?></label></th>
+                  <td>
+                    <select name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_country_code]" id="sender_country_code_<?php echo esc_attr($index); ?>" required>
+                      <option value="ZA" <?php selected($address['sender_country_code'], 'ZA'); ?>><?php echo esc_html__('South Africa', 'delivery-options-postnet-woocommerce'); ?></option>
+                      <option value="BW" <?php selected($address['sender_country_code'], 'BW'); ?>><?php echo esc_html__('Botswana', 'delivery-options-postnet-woocommerce'); ?></option>
+                      <option value="LS" <?php selected($address['sender_country_code'], 'LS'); ?>><?php echo esc_html__('Lesotho', 'delivery-options-postnet-woocommerce'); ?></option>
+                      <option value="NA" <?php selected($address['sender_country_code'], 'NA'); ?>><?php echo esc_html__('Namibia', 'delivery-options-postnet-woocommerce'); ?></option>
+                      <option value="SZ" <?php selected($address['sender_country_code'], 'SZ'); ?>><?php echo esc_html__('Eswatini', 'delivery-options-postnet-woocommerce'); ?></option>
+                    </select>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row"><label for="sender_suburb_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Suburb/City', 'delivery-options-postnet-woocommerce'); ?></label></th>
+                  <td>
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_suburb]" id="sender_suburb_<?php echo esc_attr($index); ?>" style="width:300px;" value="<?php echo esc_attr($address['sender_suburb']); ?>" required />
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row"><label for="sender_postal_code_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Postal Code', 'delivery-options-postnet-woocommerce'); ?></label></th>
+                  <td>
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_postal_code]" id="sender_postal_code_<?php echo esc_attr($index); ?>" style="width:150px;" value="<?php echo esc_attr($address['sender_postal_code']); ?>" required />
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row"><label for="sender_name_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Company/Business Name', 'delivery-options-postnet-woocommerce'); ?></label></th>
+                  <td>
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_name]" id="sender_name_<?php echo esc_attr($index); ?>" style="width:400px;" value="<?php echo esc_attr($address['sender_name']); ?>" required />
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row"><label for="sender_contact_number_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Contact Number', 'delivery-options-postnet-woocommerce'); ?></label></th>
+                  <td>
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_contact_number]" id="sender_contact_number_<?php echo esc_attr($index); ?>" style="width:200px;" value="<?php echo esc_attr($address['sender_contact_number']); ?>" required />
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row"><label for="sender_contact_person_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Contact Person', 'delivery-options-postnet-woocommerce'); ?></label></th>
+                  <td>
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_contact_person]" id="sender_postal_code_<?php echo esc_attr($index); ?>" style="width:300px;" value="<?php echo esc_attr($address['sender_contact_person']); ?>" required />
+                  </td>
+                </tr>
+              </table>
+              <button type="button" class="button remove-address" data-index="<?php echo esc_attr($index); ?>"><?php echo esc_html__('Remove Address', 'delivery-options-postnet-woocommerce'); ?></button>
+            </div>
+            <?php
+          }
+          ?>
+        </div>
+        
+        <button type="button" id="add-collection-address" class="button"><?php echo esc_html__('Add Another Collection Address', 'delivery-options-postnet-woocommerce'); ?></button>
+      </div>
       
       <?php
       // Output save settings button
@@ -247,7 +355,7 @@ function wc_postnet_delivery_enqueue_scripts($hook) {
   // Check if we are on the settings page of our plugin
   if ($hook == 'woocommerce_page_wc_postnet_delivery') {
     // Enqueue our script
-    wp_enqueue_script('wc-postnet-delivery-options-js', plugin_dir_url(__FILE__) . 'js/wc-postnet-delivery-options.js', array('jquery'), '1.0.7', true);
+    wp_enqueue_script('wc-postnet-delivery-options-js', plugin_dir_url(__FILE__) . 'js/wc-postnet-delivery-options.js', array('jquery'), '1.0.8', true);
     
     // Enqueue SweetAlert for nice alerts
     wp_enqueue_script('sweetalert2', 'https://cdn.jsdelivr.net/npm/sweetalert2@11', array(), '11.0', true);
@@ -829,6 +937,10 @@ function wc_postnet_delivery_order_received_page($order) {
   }
 }
 
+/**
+ * Create waybill when order is placed (standard mode)
+ * Now uses the unified waybill creation method
+ */
 function wc_postnet_delivery_collection_notification($order_id){
   if (!$order_id) {
     error_log('PostNet: No order ID provided, returning early');
@@ -844,6 +956,13 @@ function wc_postnet_delivery_collection_notification($order_id){
   
   // Get delivery options
   $options = get_option('wc_postnet_delivery_options');
+  
+  // Skip waybill creation if Multi Site Mode is enabled
+  if (isset($options['multi_site_mode']) && $options['multi_site_mode']) {
+    error_log('PostNet: Multi Site Mode enabled, skipping automatic waybill creation for order ' . $order_id);
+    return;
+  }
+  
   $postal_code = $order->get_shipping_postcode();
   
   $main_check = $postal_code ? json_decode(wc_postnet_fetch_url('https://pnsa.restapis.co.za/public/is-main?postcode='.$postal_code)) : null;
@@ -864,7 +983,6 @@ function wc_postnet_delivery_collection_notification($order_id){
         $chosen_method = $shipping_item->get_method_id() . ':' . $shipping_item->get_instance_id();
       }
     }
-    error_log('PostNet: Got shipping method from order: ' . $chosen_method);
   }
   
   if (empty($chosen_method)) {
@@ -893,95 +1011,13 @@ function wc_postnet_delivery_collection_notification($order_id){
     return;
   }
   
-  $service_type = ($is_main ? 'main' : 'regional').'_centre_';
-  $destination_store = json_decode(get_post_meta( $order_id, 'Destination Store', true ));
+  // Create waybill using the unified method (no collection address for old method)
+  $success = wc_postnet_delivery_create_waybill($order);
   
-  switch ($rate->title){
-    case POSTNET_SHIPPING_FREE:
-    case POSTNET_SHIPPING_EXPRESS:
-      $service_type .= 'express';
-      break;
-    case POSTNET_SHIPPING_STORE:
-      $service_type = 'postnet_to_postnet';
-      break;
-    case POSTNET_SHIPPING_ECONOMY:
-      $service_type .= 'economy';
-      break;
-    default:
-      return;
-  }
-  
-  // Define the data to send
-  $data = [
-    'online_store_name' => get_bloginfo('name'),
-    'collection_type' => $options['collection_type'],
-    'service_type' => $service_type,
-    'origin_store' => $options['postnet_store'],
-    'destination_store' => $destination_store ? $destination_store[0] : ''
-    ,
-    'receiver_street_address' => $order->get_shipping_address_1(),
-    'receiver_suburb' => $order->get_shipping_city(),
-    'receiver_postal_code' => $order->get_shipping_postcode(),
-    'receiver_name' => $order->get_formatted_shipping_full_name(),
-    'receiver_contact_person' => $order->get_billing_first_name(),
-    'receiver_contact_number' => $order->get_billing_phone(),
-    'order_number' => $order->get_order_number(),
-    'order_total' => (float) $order->get_total(),
-    'order_items' => []
-  ];
-  
-  // Get the order items
-  foreach ($order->get_items() as $item_id => $item) {
-    $product = $item->get_product();
-    $data['order_items'][] = [
-      'product_id' => (string)$product->get_id(),
-      'description' => $product->get_name(),
-      'qty' => $item->get_quantity(),
-      'price' => (float) $item->get_total(),
-      'weight' => (float) $product->get_weight(),
-      'length' => (float) $product->get_length(),
-      'width' => (float) $product->get_width(),
-      'height' => (float) $product->get_height(),
-    ];
-  }
-  
-  // API URL
-  $url = 'https://www.postnet.co.za/postnet_api-process_plugin_order';
-  
-  // Basic Authentication
-  $username = $options['postnet_api_key'];
-  $password = $options['postnet_api_passcode'];
-  $auth = base64_encode("$username:$password");
-  
-  // Setup request headers
-  $headers = [
-    'Content-Type' => 'application/json',
-    'Authorization' => 'Basic ' . $auth
-  ];
-  
-  // Send the request
-  $response = wp_remote_post($url, [
-    'method' => 'POST',
-    'headers' => $headers,
-    'body' => wp_json_encode($data),
-    'timeout' => 45,
-    'sslverify' => false
-  ]);
-  
-  // Handle the response
-  if (is_wp_error($response)) {
-    error_log('Error in API request: ' . $response->get_error_message());
+  if ($success) {
+    error_log('PostNet: Waybill created successfully for order ' . $order_id . ' using standard method.');
   } else {
-    $response_body = wp_remote_retrieve_body($response);
-    $response = json_decode($response_body);
-    
-    if (isset($response->success) && $response->success){
-      update_post_meta( $order_id, 'Waybill Number', sanitize_text_field( $response->waybill_number ) );
-      update_post_meta( $order_id, 'Tracking URL', sanitize_text_field( $response->tracking_url ) );
-      update_post_meta( $order_id, 'Label Print', sanitize_text_field( $response->label_print ) );
-    } else {
-      error_log('API Response: ' . $response_body);
-    }
+    error_log('PostNet: Failed to create waybill for order ' . $order_id . ' using standard method.');
   }
 }
 
@@ -1037,6 +1073,18 @@ function wc_postnet_delivery_sanitize_options($input) {
   $sanitized['google_api_key'] = isset($input['google_api_key']) 
     ? sanitize_text_field($input['google_api_key']) 
     : '';
+
+  // Sanitize multi_site_mode
+  $sanitized['multi_site_mode'] = isset($input['multi_site_mode']) ? boolval($input['multi_site_mode']) : false;
+
+  // Sanitize collection_addresses
+  if (isset($input['collection_addresses']) && is_array($input['collection_addresses'])) {
+    $sanitized['collection_addresses'] = array_map(function($address) {
+      return array_map('sanitize_text_field', $address);
+    }, $input['collection_addresses']);
+  } else {
+    $sanitized['collection_addresses'] = array();
+  }
 
   return $sanitized;
 }
@@ -1277,4 +1325,457 @@ function wc_postnet_validate_google_api_key() {
   wp_send_json_success(array(
     'message' => __('Google API key is valid and has the required services enabled.', 'delivery-options-postnet-woocommerce')
   ));
+}
+
+/**
+ * Add collection address selection field to admin order page
+ */
+function wc_postnet_delivery_admin_collection_address_field($order) {
+  $options = get_option('wc_postnet_delivery_options');
+  
+  // Only show if Multi Site Mode is enabled
+  if (!isset($options['multi_site_mode']) || !$options['multi_site_mode']) {
+    return;
+  }
+  
+  $collection_addresses = isset($options['collection_addresses']) ? $options['collection_addresses'] : array();
+  if (empty($collection_addresses)) {
+    return;
+  }
+  
+  $selected_address = get_post_meta($order->get_id(), '_collection_address_index', true);
+  $order_status = $order->get_status();
+  
+  // Check if collection address was recently updated (within last 5 minutes)
+  $address_updated = get_post_meta($order->get_id(), '_collection_address_updated', true);
+  $recently_updated = false;
+  if ($address_updated) {
+    $update_time = strtotime($address_updated);
+    $current_time = current_time('timestamp');
+    $recently_updated = ($current_time - $update_time) < 300; // 5 minutes
+  }
+  
+  // Also check if this is a form submission that just saved the address
+  $just_saved = isset($_POST['collection_address_index']) && !empty($_POST['collection_address_index']);
+  
+  // Check session flag for recently saved address
+  $session_saved = false;
+  if (!session_id()) {
+    session_start();
+  }
+  if (isset($_SESSION['postnet_address_saved_' . $order->get_id()])) {
+    $session_saved = true;
+    // Clear the session flag after using it
+    unset($_SESSION['postnet_address_saved_' . $order->get_id()]);
+  }
+  
+  // Determine CSS classes based on selection and order status
+  $css_classes = 'address';
+  if ($selected_address === '' || $selected_address === null) {
+    $css_classes .= ' collection-address-required';
+  } else {
+    $css_classes .= ' collection-address-success';
+  }
+  
+  echo '<div class="' . esc_attr($css_classes) . '">';
+  echo '<h3>' . esc_html__('Collection Address', 'delivery-options-postnet-woocommerce') . '</h3>';
+  
+  // Show warning ONLY if no address is selected AND order is completed AND no recent updates
+  // This prevents the warning from showing when an address was just saved
+  if (($selected_address === '' || $selected_address === null) && $order_status === 'completed' && !$recently_updated && !$just_saved && !$session_saved) {
+    echo '<div class="collection-address-warning" id="collection-address-warning">';
+    echo esc_html__('Warning: This order is marked as completed but no collection address is selected. Waybill creation will fail.', 'delivery-options-postnet-woocommerce');
+    echo '</div>';
+    
+    // Debug logging
+    error_log('PostNet: Warning shown for order ' . $order->get_id() . ' - Address: ' . ($selected_address !== '' ? $selected_address : 'empty') . ', Status: ' . $order_status . ', Recently Updated: ' . ($recently_updated ? 'yes' : 'no') . ', Just Saved: ' . ($just_saved ? 'yes' : 'no') . ', Session Saved: ' . ($session_saved ? 'yes' : 'no'));
+  }
+  
+  // Show success message if address is selected (regardless of order status)
+  if ($selected_address !== '' && $selected_address !== null) {
+    echo '<div class="collection-address-success" id="collection-address-success">';
+    echo esc_html__('Collection address selected. Order can be completed and waybill will be created.', 'delivery-options-postnet-woocommerce');
+    echo '</div>';
+  }
+  
+  echo '<select name="collection_address_index" id="collection_address_index" required>';
+  echo '<option value="">' . esc_html__('Select Collection Address', 'delivery-options-postnet-woocommerce') . '</option>';
+  
+  foreach ($collection_addresses as $index => $address) {
+    $address_label = $address['sender_name'] . ' - ' . $address['sender_street_address'] . ', ' . $address['sender_suburb'];
+    $selected = ($selected_address == $index) ? 'selected' : '';
+    echo '<option value="' . esc_attr($index) . '" ' . $selected . '>' . esc_html($address_label) . '</option>';
+  }
+  
+  echo '</select>';
+  
+  // Add hidden field to track if address was just saved
+  if ($just_saved || $session_saved) {
+    echo '<input type="hidden" id="address-just-saved" value="1" />';
+  }
+  
+  if ($selected_address === '' || $selected_address === null) {
+    echo '<p class="description">' . esc_html__('⚠️ REQUIRED: Select the collection address for this order. Waybill creation requires this selection in Multi Site Mode.', 'delivery-options-postnet-woocommerce') . '</p>';
+  } else {
+    echo '<p class="description">' . esc_html__('✅ Collection address selected. Order can now be completed.', 'delivery-options-postnet-woocommerce') . '</p>';
+  }
+  
+  echo '</div>';
+  
+  // Add JavaScript to refresh indicators if this is a completed order with an address
+  if ($order_status === 'completed' && ($selected_address !== '' && $selected_address !== null)) {
+    echo '<script type="text/javascript">
+      jQuery(document).ready(function($) {
+        // Force refresh of indicators for completed orders
+        setTimeout(function() {
+          if (typeof refreshCollectionAddressIndicators === "function") {
+            refreshCollectionAddressIndicators();
+          }
+        }, 200);
+      });
+    </script>';
+  }
+  
+  // Add JavaScript to immediately remove warnings if address was just saved
+  if ($just_saved || $session_saved) {
+    echo '<script type="text/javascript">
+      jQuery(document).ready(function($) {
+        // Immediately remove any warning messages if address was just saved
+        $(".collection-address-warning").remove();
+        // Update the container to success state
+        $(".address").removeClass("collection-address-required").addClass("collection-address-success");
+      });
+    </script>';
+  }
+}
+
+/**
+ * Save collection address selection from admin order page
+ */
+function wc_postnet_delivery_save_admin_collection_address_field($order_id, $post) {
+  if (isset($_POST['collection_address_index'])) {
+    update_post_meta($order_id, '_collection_address_index', sanitize_text_field($_POST['collection_address_index']));
+    
+    // Add a flag to indicate the collection address was updated
+    update_post_meta($order_id, '_collection_address_updated', current_time('timestamp'));
+    
+    // Set a session flag to indicate the address was just saved
+    if (!session_id()) {
+      session_start();
+    }
+    $_SESSION['postnet_address_saved_' . $order_id] = true;
+  }
+}
+
+/**
+ * Create waybill when order status is changed to Completed (Multi Site Mode)
+ * Uses the unified waybill creation method
+ */
+function wc_postnet_delivery_create_waybill_on_completion($order_id) {
+  $options = get_option('wc_postnet_delivery_options');
+  
+  // Only proceed if Multi Site Mode is enabled
+  if (!isset($options['multi_site_mode']) || !$options['multi_site_mode']) {
+    return;
+  }
+  
+  $order = wc_get_order($order_id);
+  if (!$order) {
+    return;
+  }
+  
+  // Check if a collection address has been selected
+  $collection_address_index = get_post_meta($order_id, '_collection_address_index', true);
+  if ($collection_address_index === '') {
+    error_log('PostNet: No collection address selected for order ' . $order_id . '. Waybill creation skipped.');
+    return;
+  }
+  
+  // Get the selected collection address
+  $collection_addresses = isset($options['collection_addresses']) ? $options['collection_addresses'] : array();
+  if (!isset($collection_addresses[$collection_address_index])) {
+    error_log('PostNet: Invalid collection address index ' . $collection_address_index . ' for order ' . $order_id);
+    return;
+  }
+  
+  $selected_address = $collection_addresses[$collection_address_index];
+  
+  // Check if waybill already exists
+  $existing_waybill = get_post_meta($order_id, 'Waybill Number', true);
+  if (!empty($existing_waybill)) {
+    error_log('PostNet: Waybill already exists for order ' . $order_id . '. Skipping creation.');
+    return;
+  }
+  
+  // Create waybill using the selected collection address
+  wc_postnet_delivery_create_waybill_with_collection_address($order, $selected_address);
+}
+
+/**
+ * Unified waybill creation method used by both old and new methods
+ */
+function wc_postnet_delivery_create_waybill($order, $collection_address = null) {
+  try {
+    // Validate input parameters
+    if (!$order || !is_object($order)) {
+      error_log('PostNet: Invalid order object provided to wc_postnet_delivery_create_waybill');
+      return false;
+    }
+    
+    $options = get_option('wc_postnet_delivery_options');
+    if (!$options) {
+      error_log('PostNet: No plugin options found');
+      return false;
+    }
+    
+    $postal_code = $order->get_shipping_postcode();
+    
+    $main_check = $postal_code ? json_decode(wc_postnet_fetch_url('https://pnsa.restapis.co.za/public/is-main?postcode='.$postal_code)) : null;
+    $is_main = $main_check ? $main_check->main : false;
+  
+  // Try to get shipping method from session first (if available)
+  $chosen_method = '';
+  if (function_exists('WC') && WC() && WC()->session && WC()->session->get('chosen_shipping_methods')) {
+    $chosen_methods = WC()->session->get('chosen_shipping_methods');
+    $chosen_method = !empty($chosen_methods) ? $chosen_methods[0] : '';
+    error_log('PostNet: Got shipping method from session: ' . $chosen_method);
+  } else {
+    error_log('PostNet: Session not available, trying order meta for order ' . $order->get_id());
+  }
+  
+  // If no chosen method in session, try to get it from the order
+  if (empty($chosen_method)) {
+    $chosen_method = $order->get_meta('_chosen_shipping_method');
+    if (empty($chosen_method)) {
+      $shipping_items = $order->get_items('shipping');
+      if (!empty($shipping_items)) {
+        $shipping_item = reset($shipping_items);
+        $chosen_method = $shipping_item->get_method_id() . ':' . $shipping_item->get_instance_id();
+        error_log('PostNet: Got shipping method from shipping items: ' . $chosen_method);
+      } else {
+        error_log('PostNet: No shipping items found for order ' . $order->get_id());
+      }
+    } else {
+      error_log('PostNet: Got shipping method from order meta: ' . $chosen_method);
+    }
+  }
+  
+  if (empty($chosen_method)) {
+    error_log('PostNet: No shipping method found for order ' . $order->get_id());
+    return false;
+  }
+  
+  $rate = null;
+  $zone = wc_postnet_delivery_get_zone();
+  if (!$zone) {
+    error_log('PostNet: Could not get shipping zone for order ' . $order->get_id());
+    return false;
+  }
+  
+  $shipping_methods = $zone->get_shipping_methods();
+  if (empty($shipping_methods)) {
+    error_log('PostNet: No shipping methods found in zone for order ' . $order->get_id());
+    return false;
+  }
+  
+  foreach ($shipping_methods as $method) {
+    if ($method->id . ':' . $method->instance_id == $chosen_method) {
+      $rate = $method;
+      break;
+    }
+  }
+  
+  if (!$rate) {
+    error_log('PostNet: Could not find matching shipping method for order ' . $order->get_id() . ' with method: ' . $chosen_method);
+    return false;
+  }
+  
+  $service_type = ($is_main ? 'main' : 'regional').'_centre_';
+  $destination_store = json_decode(get_post_meta($order->get_id(), 'Destination Store', true));
+  
+  switch ($rate->title) {
+    case POSTNET_SHIPPING_FREE:
+    case POSTNET_SHIPPING_EXPRESS:
+      $service_type .= 'express';
+      break;
+    case POSTNET_SHIPPING_STORE:
+      $service_type = 'postnet_to_postnet';
+      break;
+    case POSTNET_SHIPPING_ECONOMY:
+      $service_type .= 'economy';
+      break;
+    default:
+      return false;
+  }
+  
+  // Define the base data to send
+  $data = [
+    'online_store_name' => get_bloginfo('name'),
+    'collection_type' => $options['collection_type'],
+    'service_type' => $service_type,
+    'origin_store' => $options['postnet_store'],
+    'destination_store' => $destination_store ? $destination_store[0] : '',
+    'receiver_street_address' => $order->get_shipping_address_1(),
+    'receiver_suburb' => $order->get_shipping_city(),
+    'receiver_postal_code' => $order->get_shipping_postcode(),
+    'receiver_name' => $order->get_formatted_shipping_full_name(),
+    'receiver_contact_person' => $order->get_billing_first_name(),
+    'receiver_contact_number' => $order->get_billing_phone(),
+    'order_number' => $order->get_order_number(),
+    'order_total' => (float) $order->get_total(),
+    'order_items' => []
+  ];
+  
+  // Add collection address fields if provided (Multi Site Mode)
+  if ($collection_address) {
+    $data['sender_street_address'] = $collection_address['sender_street_address'];
+    $data['sender_other_address'] = $collection_address['sender_other_address'];
+    $data['sender_country_code'] = $collection_address['sender_country_code'];
+    $data['sender_suburb'] = $collection_address['sender_suburb'];
+    $data['sender_postal_code'] = $collection_address['sender_postal_code'];
+    $data['sender_name'] = $collection_address['sender_name'];
+    $data['sender_contact_number'] = $collection_address['sender_contact_number'];
+    $data['sender_contact_person'] = $collection_address['sender_contact_person'];
+  }
+  
+  // Get the order items
+  foreach ($order->get_items() as $item_id => $item) {
+    $product = $item->get_product();
+    $data['order_items'][] = [
+      'product_id' => (string)$product->get_id(),
+      'description' => $product->get_name(),
+      'qty' => $item->get_quantity(),
+      'price' => (float) $item->get_total(),
+      'weight' => (float) $product->get_weight(),
+      'length' => (float) $product->get_length(),
+      'width' => (float) $product->get_width(),
+      'height' => (float) $product->get_height(),
+    ];
+  }
+  
+  // API URL
+  $url = 'https://www.postnet.co.za/postnet_api-process_plugin_order';
+  
+  // Basic Authentication
+  $username = $options['postnet_api_key'];
+  $password = $options['postnet_api_passcode'];
+  $auth = base64_encode("$username:$password");
+  
+  // Setup request headers
+  $headers = [
+    'Content-Type' => 'application/json',
+    'Authorization' => 'Basic ' . $auth
+  ];
+  
+  // Send the request
+  $response = wp_remote_post($url, [
+    'method' => 'POST',
+    'headers' => $headers,
+    'body' => wp_json_encode($data),
+    'timeout' => 45,
+    'sslverify' => false
+  ]);
+  
+  // Handle the response
+  if (is_wp_error($response)) {
+    error_log('Error in API request: ' . $response->get_error_message());
+    return false;
+  } else {
+    $response_body = wp_remote_retrieve_body($response);
+    $response = json_decode($response_body);
+    
+    if (isset($response->success) && $response->success) {
+      $order_id = $order->get_id();
+      update_post_meta($order_id, 'Waybill Number', sanitize_text_field($response->waybill_number));
+      update_post_meta($order_id, 'Tracking URL', sanitize_text_field($response->tracking_url));
+      update_post_meta($order_id, 'Label Print', sanitize_text_field($response->label_print));
+      
+      if ($collection_address) {
+        error_log('PostNet: Waybill created successfully for order ' . $order_id . ' with collection address.');
+      } else {
+        error_log('PostNet: Waybill created successfully for order ' . $order_id . ' with PostNet store.');
+      }
+      
+      return true;
+    } else {
+      error_log('API Response: ' . $response_body);
+      return false;
+    }
+  }
+  
+  } catch (Exception $e) {
+    error_log('PostNet: Exception in wc_postnet_delivery_create_waybill: ' . $e->getMessage());
+    error_log('PostNet: Stack trace: ' . $e->getTraceAsString());
+    return false;
+  }
+}
+
+/**
+ * Create waybill with collection address data (Multi Site Mode)
+ */
+function wc_postnet_delivery_create_waybill_with_collection_address($order, $collection_address) {
+  return wc_postnet_delivery_create_waybill($order, $collection_address);
+}
+
+/**
+ * Validate collection address selection before allowing order completion
+ */
+function wc_postnet_delivery_validate_collection_address_before_completion($order, $data_store) {
+  try {
+    // Validate input parameters
+    if (!$order || !is_object($order)) {
+      error_log('PostNet: Invalid order object in validation function');
+      return;
+    }
+    
+    $options = get_option('wc_postnet_delivery_options');
+    if (!$options) {
+      error_log('PostNet: No plugin options found in validation function');
+      return;
+    }
+    
+    // Only validate if Multi Site Mode is enabled
+    if (!isset($options['multi_site_mode']) || !$options['multi_site_mode']) {
+      return;
+    }
+    
+    // Get the current order status and the new status being set
+    $current_status = $order->get_status();
+    $new_status = $order->get_status();
+    
+    // Check if we're trying to change to 'completed' status
+    if (isset($_POST['order_status']) && $_POST['order_status'] === 'wc-completed') {
+      $new_status = 'completed';
+    }
+    
+    // If the status is being changed to 'completed', validate collection address
+    if ($new_status === 'completed') {
+      $collection_address_index = get_post_meta($order->get_id(), '_collection_address_index', true);
+      
+      if ($collection_address_index === '') {
+        // Prevent the status change and show error
+        wp_die(
+          '<div class="notice notice-error"><p><strong>Error:</strong> Cannot complete order. A collection address must be selected before marking the order as completed in Multi Site Mode.</p></div>',
+          'Collection Address Required',
+          array('back_link' => true)
+        );
+      }
+      
+      // Validate that the selected collection address exists
+      $collection_addresses = isset($options['collection_addresses']) ? $options['collection_addresses'] : array();
+      if (!isset($collection_addresses[$collection_address_index])) {
+        wp_die(
+          '<div class="notice notice-error"><p><strong>Error:</strong> The selected collection address is invalid. Please select a valid collection address before completing the order.</p></div>',
+          'Invalid Collection Address',
+          array('back_link' => true)
+        );
+      }
+    }
+    
+  } catch (Exception $e) {
+    error_log('PostNet: Exception in validation function: ' . $e->getMessage());
+    error_log('PostNet: Stack trace: ' . $e->getTraceAsString());
+    // Don't block the order save if validation fails due to an error
+    return;
+  }
 }

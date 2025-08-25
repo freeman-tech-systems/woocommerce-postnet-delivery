@@ -383,3 +383,193 @@
   color: #555;
   margin-bottom: 6px;
 }
+
+/* Collection Addresses Section Styles */
+#collection-addresses-section {
+  margin-top: 30px;
+  padding: 20px;
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+#collection-addresses-section h2 {
+  margin-top: 0;
+  color: #333;
+  font-size: 20px;
+  border-bottom: 2px solid #2271b1;
+  padding-bottom: 10px;
+}
+
+#collection-addresses-section p {
+  color: #666;
+  margin-bottom: 20px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.collection-address {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.collection-address h3 {
+  margin-top: 0;
+  color: #2271b1;
+  font-size: 18px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+
+.collection-address .form-table {
+  margin-bottom: 20px;
+}
+
+.collection-address .form-table th {
+  width: 200px;
+  padding: 12px 10px 12px 0;
+  vertical-align: top;
+  font-weight: 600;
+  color: #333;
+}
+
+.collection-address .form-table td {
+  padding: 12px 10px;
+  vertical-align: top;
+}
+
+.collection-address input[type="text"],
+.collection-address select {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 14px;
+  transition: border-color 0.2s ease;
+}
+
+.collection-address input[type="text"]:focus,
+.collection-address select:focus {
+  border-color: #2271b1;
+  outline: none;
+  box-shadow: 0 0 0 1px #2271b1;
+}
+
+.collection-address .description {
+  margin-top: 5px;
+  font-size: 13px;
+  color: #666;
+  font-style: italic;
+}
+
+.collection-address .remove-address {
+  background-color: #dc3232;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.collection-address .remove-address:hover {
+  background-color: #a00;
+}
+
+#add-collection-address {
+  background-color: #2271b1;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  margin-top: 10px;
+}
+
+#add-collection-address:hover {
+  background-color: #135e96;
+}
+
+/* Responsive styles for collection addresses */
+@media only screen and (max-width: 768px) {
+  #collection-addresses-section {
+    padding: 15px;
+    margin-top: 20px;
+  }
+  
+  .collection-address {
+    padding: 15px;
+  }
+  
+  .collection-address .form-table th {
+    width: auto;
+    display: block;
+    padding: 8px 0 5px 0;
+  }
+  
+  .collection-address .form-table td {
+    padding: 0 0 15px 0;
+    display: block;
+  }
+  
+  .collection-address input[type="text"],
+  .collection-address select {
+    width: 100% !important;
+    max-width: none;
+  }
+}
+
+/* Collection Address Field Styling for Admin Orders */
+.collection-address-required {
+  border-left: 4px solid #dc3232 !important;
+  background-color: #fef8f8 !important;
+}
+
+.collection-address-required h3::after {
+  content: ' *';
+  color: #dc3232;
+  font-weight: bold;
+}
+
+.collection-address-required .description {
+  color: #dc3232 !important;
+  font-weight: 600;
+}
+
+/* Warning styling for incomplete collection address selection */
+.collection-address-warning {
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 4px;
+  padding: 10px 15px;
+  margin: 10px 0;
+  color: #856404;
+}
+
+.collection-address-warning::before {
+  content: '⚠️ ';
+  margin-right: 8px;
+}
+
+/* Success styling for valid collection address selection */
+.collection-address-success {
+  background-color: #d4edda;
+  border: 1px solid #c3e6cb;
+  border-radius: 4px;
+  padding: 10px 15px;
+  margin: 10px 0;
+  color: #155724;
+}
+
+.collection-address-success::before {
+  content: '✅ ';
+  margin-right: 8px;
+}
