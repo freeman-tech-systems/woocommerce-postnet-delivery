@@ -1636,6 +1636,7 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
     $data['sender_name'] = $collection_address['sender_name'];
     $data['sender_contact_number'] = $collection_address['sender_contact_number'];
     $data['sender_contact_person'] = $collection_address['sender_contact_person'];
+    $data['create_collection'] = true;
   }
   
   // Get the order items
