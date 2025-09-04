@@ -935,6 +935,24 @@ function wc_postnet_delivery_order_received_page($order) {
   if (!empty($label_print)) {
     echo '<p><strong>' . esc_html__('Label Print', 'delivery-options-postnet-woocommerce') . ':</strong> <a href="' . esc_url($label_print) . '" target="_blank">' . esc_html($label_print) . '</a></p>';
   }
+  
+  // Display collection information if available
+  $collection_reference = get_post_meta($order->get_id(), 'Collection Reference', true);
+  if (!empty($collection_reference)) {
+    echo '<p><strong>' . esc_html__('Collection Reference', 'delivery-options-postnet-woocommerce') . ':</strong> ' . esc_html($collection_reference) . '</p>';
+  }
+  
+  $collection_success = get_post_meta($order->get_id(), 'Collection Success', true);
+  $collection_error = get_post_meta($order->get_id(), 'Collection Error', true);
+  
+  if ($collection_success === 'true') {
+    echo '<p><strong>' . esc_html__('Collection Status', 'delivery-options-postnet-woocommerce') . ':</strong> <span style="color: green;">' . esc_html__('Success', 'delivery-options-postnet-woocommerce') . '</span></p>';
+  } elseif ($collection_success === 'false' || !empty($collection_error)) {
+    echo '<p><strong>' . esc_html__('Collection Status', 'delivery-options-postnet-woocommerce') . ':</strong> <span style="color: red;">' . esc_html__('Failed', 'delivery-options-postnet-woocommerce') . '</span></p>';
+    if (!empty($collection_error)) {
+      echo '<p><strong>' . esc_html__('Collection Error', 'delivery-options-postnet-woocommerce') . ':</strong> ' . esc_html($collection_error) . '</p>';
+    }
+  }
 }
 
 /**
@@ -1691,7 +1709,33 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
       update_post_meta($order_id, 'Tracking URL', sanitize_text_field($response->tracking_url));
       update_post_meta($order_id, 'Label Print', sanitize_text_field($response->label_print));
       
+      // Handle collection response fields if create_collection was true
       if ($collection_address) {
+        error_log('PostNet: Processing collection response for order ' . $order_id);
+        
+        // Save collection response fields
+        if (isset($response->collection_reference) && !empty($response->collection_reference)) {
+          update_post_meta($order_id, 'Collection Reference', sanitize_text_field($response->collection_reference));
+          error_log('PostNet: Collection reference saved for order ' . $order_id . ': ' . $response->collection_reference);
+        } else {
+          error_log('PostNet: No collection reference in response for order ' . $order_id);
+        }
+        
+        if (isset($response->collection_success)) {
+          $success_value = $response->collection_success ? 'true' : 'false';
+          update_post_meta($order_id, 'Collection Success', $success_value);
+          error_log('PostNet: Collection success status for order ' . $order_id . ': ' . $success_value);
+        } else {
+          error_log('PostNet: No collection success status in response for order ' . $order_id);
+        }
+        
+        if (isset($response->collection_error) && !empty($response->collection_error)) {
+          update_post_meta($order_id, 'Collection Error', sanitize_text_field($response->collection_error));
+          error_log('PostNet: Collection error for order ' . $order_id . ': ' . $response->collection_error);
+        } else {
+          error_log('PostNet: No collection error in response for order ' . $order_id);
+        }
+        
         error_log('PostNet: Waybill created successfully for order ' . $order_id . ' with collection address.');
       } else {
         error_log('PostNet: Waybill created successfully for order ' . $order_id . ' with PostNet store.');
