@@ -1824,3 +1824,19 @@ function wc_postnet_delivery_validate_collection_address_before_completion($orde
     return;
   }
 }
+
+// Completely disable shipping on cart page
+add_action('init', 'disable_cart_shipping');
+function disable_cart_shipping() {
+    if (is_cart()) {
+        // Remove shipping calculation
+        remove_action('woocommerce_cart_calculate_fees', array(WC()->shipping, 'calculate_shipping'));
+        
+        // Clear shipping methods
+        WC()->session->set('chosen_shipping_methods', array());
+    }
+}
+
+// Hide shipping totals
+add_filter('woocommerce_cart_needs_shipping', '__return_false');
+add_filter('woocommerce_cart_ready_to_calc_shipping', '__return_false');
