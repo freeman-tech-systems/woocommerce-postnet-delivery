@@ -1826,7 +1826,7 @@ function wc_postnet_delivery_validate_collection_address_before_completion($orde
 }
 
 // Completely disable shipping on cart page
-//add_action('init', 'disable_cart_shipping');
+add_action('init', 'disable_cart_shipping');
 function disable_cart_shipping() {
     if (is_cart()) {
         // Remove shipping calculation
@@ -1838,5 +1838,5 @@ function disable_cart_shipping() {
 }
 
 // Hide shipping totals
-add_filter('woocommerce_cart_needs_shipping', '__return_false');
+//add_filter('woocommerce_cart_needs_shipping', '__return_false');
 add_filter('woocommerce_cart_ready_to_calc_shipping', '__return_false');
