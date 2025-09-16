@@ -1825,18 +1825,32 @@ function wc_postnet_delivery_validate_collection_address_before_completion($orde
   }
 }
 
-// Completely disable shipping on cart page
+// Completely disable shipping on cart page only
 add_action('init', 'disable_cart_shipping');
 function disable_cart_shipping() {
     if (is_cart()) {
-        // Remove shipping calculation
+        // Remove shipping calculation only on cart page
         remove_action('woocommerce_cart_calculate_fees', array(WC()->shipping, 'calculate_shipping'));
         
-        // Clear shipping methods
+        // Clear shipping methods only on cart page
         WC()->session->set('chosen_shipping_methods', array());
     }
 }
 
-// Hide shipping totals
-//add_filter('woocommerce_cart_needs_shipping', '__return_false');
-add_filter('woocommerce_cart_ready_to_calc_shipping', '__return_false');
+// Hide shipping totals - return false only on cart page
+add_filter('woocommerce_cart_needs_shipping', 'cart_needs_shipping_check');
+function cart_needs_shipping_check($needs_shipping) {
+    if (is_cart()) {
+        return false;
+    }
+    return $needs_shipping;
+}
+
+// Disable shipping calculation - return false only on cart page  
+add_filter('woocommerce_cart_ready_to_calc_shipping', 'cart_ready_to_calc_shipping_check');
+function cart_ready_to_calc_shipping_check($ready) {
+    if (is_cart()) {
+        return false;
+    }
+    return $ready;
+}
