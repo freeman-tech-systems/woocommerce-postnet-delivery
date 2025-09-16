@@ -14,9 +14,9 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
  */
 
 const POSTNET_SHIPPING_FREE = 'PostNet Free Shipping';
-const POSTNET_SHIPPING_STORE = 'PostNet to PostNet';
-const POSTNET_SHIPPING_EXPRESS = 'PostNet Express';
-const POSTNET_SHIPPING_ECONOMY = 'PostNet Economy';
+const POSTNET_SHIPPING_STORE = 'Collect at PostNet';
+const POSTNET_SHIPPING_EXPRESS = 'PostNet Door Delivery - Express';
+const POSTNET_SHIPPING_ECONOMY = 'PostNet Door Delivery - Economy';
 
 add_action('admin_enqueue_scripts', 'wc_postnet_delivery_enqueue_scripts');
 add_action('admin_init', 'wc_postnet_delivery_admin');

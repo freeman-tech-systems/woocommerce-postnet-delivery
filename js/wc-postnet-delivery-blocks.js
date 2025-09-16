@@ -238,7 +238,7 @@
         // Method 1: Check for radio buttons with labels
         const radioLabels = document.querySelectorAll('.wc-block-components-radio-control__label, .wc-block-shipping-rates-control__item-label');
         for (const label of radioLabels) {
-            if (label.textContent.includes('PostNet to PostNet')) {
+            if (label.textContent.includes('Collect at PostNet')) {
                 const radioOption = label.closest('.wc-block-components-radio-control__option, .wc-block-shipping-rates-control__item');
                 if (radioOption) {
                     const radioInput = radioOption.querySelector('input[type="radio"]');
@@ -254,7 +254,7 @@
         const selectedMethod = document.querySelector('.wc-block-components-radio-control__input:checked, input[name="shipping_method"]:checked');
         if (selectedMethod) {
             const parentEl = selectedMethod.closest('.wc-block-components-radio-control__option, .wc-block-shipping-rates-control__item');
-            if (parentEl && parentEl.textContent.includes('PostNet to PostNet')) {
+            if (parentEl && parentEl.textContent.includes('Collect at PostNet')) {
                 log('PostNet shipping detected (method 2)');
                 return true;
             }
@@ -271,7 +271,7 @@
             const inputs = shippingSection.querySelectorAll('input[type="radio"]:checked');
             for (const input of inputs) {
                 const label = input.closest('label, div');
-                if (label && label.textContent.includes('PostNet to PostNet')) {
+                if (label && label.textContent.includes('Collect at PostNet')) {
                     log('PostNet shipping detected (method 3)');
                     return true;
                 }
