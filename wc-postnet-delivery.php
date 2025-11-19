@@ -68,6 +68,7 @@ function wc_postnet_delivery_settings_init() {
       'default' => array(
         'service_type' => array(),
         'collection_type' => 'always_collect',
+        'waybill_option' => 'single',
         'postnet_to_postnet_fee' => '',
         'order_amount_threshold' => '',
         'postnet_store' => '',
@@ -135,7 +136,8 @@ function wc_postnet_delivery_options_page() {
   if (!$options){
     $options = [
       'service_type' => [],
-      'collection_type' => 'always_collect'
+      'collection_type' => 'always_collect',
+      'waybill_option' => 'single'
     ];
   }
   
@@ -191,6 +193,16 @@ function wc_postnet_delivery_options_page() {
               <option value="always_deliver" <?php selected($options['collection_type'], 'always_deliver'); ?>><?php echo esc_html__('Always Deliver', 'delivery-options-postnet-woocommerce'); ?></option>
               <option value="service_based" <?php selected($options['collection_type'], 'service_based'); ?>><?php echo esc_html__('Service Based', 'delivery-options-postnet-woocommerce'); ?></option>
             </select>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row"><label for="waybill_option"><?php echo esc_html__('Waybill Option', 'delivery-options-postnet-woocommerce'); ?></label></th>
+          <td>
+            <select name="wc_postnet_delivery_options[waybill_option]" id="waybill_option">
+              <option value="single" <?php selected(isset($options['waybill_option']) ? $options['waybill_option'] : 'single', 'single'); ?>><?php echo esc_html__('Single Waybill', 'delivery-options-postnet-woocommerce'); ?></option>
+              <option value="individual" <?php selected(isset($options['waybill_option']) ? $options['waybill_option'] : 'single', 'individual'); ?>><?php echo esc_html__('Individual Waybills', 'delivery-options-postnet-woocommerce'); ?></option>
+            </select>
+            <p class="description"><?php echo esc_html__('Choose whether orders are grouped on a single waybill or each item creates its own waybill.', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
         <tr>
@@ -1095,6 +1107,12 @@ function wc_postnet_delivery_sanitize_options($input) {
   // Sanitize multi_site_mode
   $sanitized['multi_site_mode'] = isset($input['multi_site_mode']) ? boolval($input['multi_site_mode']) : false;
 
+  // Sanitize waybill option
+  $valid_waybill_options = array('single', 'individual');
+  $sanitized['waybill_option'] = isset($input['waybill_option']) && in_array($input['waybill_option'], $valid_waybill_options, true)
+    ? $input['waybill_option']
+    : 'single';
+
   // Sanitize collection_addresses
   if (isset($input['collection_addresses']) && is_array($input['collection_addresses'])) {
     $sanitized['collection_addresses'] = array_map(function($address) {
@@ -1630,6 +1648,7 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
   $data = [
     'online_store_name' => get_bloginfo('name'),
     'collection_type' => $options['collection_type'],
+    'waybill_option' => isset($options['waybill_option']) ? $options['waybill_option'] : 'single',
     'service_type' => $service_type,
     'origin_store' => $options['postnet_store'],
     'destination_store' => $destination_store ? $destination_store[0] : '',
