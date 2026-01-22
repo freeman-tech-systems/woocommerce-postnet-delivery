@@ -36,6 +36,9 @@ add_action('woocommerce_order_status_completed', 'wc_postnet_delivery_create_way
 add_action('woocommerce_admin_order_data_after_billing_address', 'wc_postnet_delivery_admin_collection_address_field', 10, 1);
 add_action('woocommerce_process_shop_order_meta', 'wc_postnet_delivery_save_admin_collection_address_field', 10, 2);
 add_action('woocommerce_before_order_object_save', 'wc_postnet_delivery_validate_collection_address_before_completion', 10, 2);
+add_action('woocommerce_admin_order_data_after_billing_address', 'wc_postnet_delivery_admin_number_of_boxes_field', 10, 1);
+add_action('woocommerce_process_shop_order_meta', 'wc_postnet_delivery_save_admin_number_of_boxes_field', 10, 2);
+add_action('woocommerce_before_order_object_save', 'wc_postnet_delivery_validate_number_of_boxes_before_completion', 10, 2);
 add_action('wp_ajax_nopriv_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 add_action('wp_ajax_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 add_action('wp_ajax_validate_google_api_key', 'wc_postnet_validate_google_api_key');
@@ -201,8 +204,9 @@ function wc_postnet_delivery_options_page() {
             <select name="wc_postnet_delivery_options[waybill_option]" id="waybill_option">
               <option value="single" <?php selected(isset($options['waybill_option']) ? $options['waybill_option'] : 'single', 'single'); ?>><?php echo esc_html__('Single Waybill', 'delivery-options-postnet-woocommerce'); ?></option>
               <option value="individual" <?php selected(isset($options['waybill_option']) ? $options['waybill_option'] : 'single', 'individual'); ?>><?php echo esc_html__('Individual Waybills', 'delivery-options-postnet-woocommerce'); ?></option>
+              <option value="user_specified" <?php selected(isset($options['waybill_option']) ? $options['waybill_option'] : 'single', 'user_specified'); ?>><?php echo esc_html__('User Specified', 'delivery-options-postnet-woocommerce'); ?></option>
             </select>
-            <p class="description"><?php echo esc_html__('Choose whether orders are grouped on a single waybill or each item creates its own waybill.', 'delivery-options-postnet-woocommerce'); ?></p>
+            <p class="description"><?php echo esc_html__('Choose whether orders are grouped on a single waybill, each item creates its own waybill, or the number of boxes is specified by the user on the order page.', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
         <tr>
@@ -1108,7 +1112,7 @@ function wc_postnet_delivery_sanitize_options($input) {
   $sanitized['multi_site_mode'] = isset($input['multi_site_mode']) ? boolval($input['multi_site_mode']) : false;
 
   // Sanitize waybill option
-  $valid_waybill_options = array('single', 'individual');
+  $valid_waybill_options = array('single', 'individual', 'user_specified');
   $sanitized['waybill_option'] = isset($input['waybill_option']) && in_array($input['waybill_option'], $valid_waybill_options, true)
     ? $input['waybill_option']
     : 'single';
@@ -1504,6 +1508,128 @@ function wc_postnet_delivery_save_admin_collection_address_field($order_id, $pos
 }
 
 /**
+ * Add number of boxes field to admin order page
+ */
+function wc_postnet_delivery_admin_number_of_boxes_field($order) {
+  $options = get_option('wc_postnet_delivery_options');
+  
+  // Only show if waybill_option is 'user_specified'
+  if (!isset($options['waybill_option']) || $options['waybill_option'] !== 'user_specified') {
+    return;
+  }
+  
+  $number_of_boxes = get_post_meta($order->get_id(), '_number_of_boxes', true);
+  $order_status = $order->get_status();
+  
+  // Check if number_of_boxes was recently updated (within last 5 minutes)
+  $boxes_updated = get_post_meta($order->get_id(), '_number_of_boxes_updated', true);
+  $recently_updated = false;
+  if ($boxes_updated) {
+    $update_time = strtotime($boxes_updated);
+    $current_time = current_time('timestamp');
+    $recently_updated = ($current_time - $update_time) < 300; // 5 minutes
+  }
+  
+  // Also check if this is a form submission that just saved the number
+  $just_saved = isset($_POST['number_of_boxes']) && !empty($_POST['number_of_boxes']);
+  
+  // Check session flag for recently saved number
+  $session_saved = false;
+  if (!session_id()) {
+    session_start();
+  }
+  if (isset($_SESSION['postnet_boxes_saved_' . $order->get_id()])) {
+    $session_saved = true;
+    // Clear the session flag after using it
+    unset($_SESSION['postnet_boxes_saved_' . $order->get_id()]);
+  }
+  
+  // Determine CSS classes based on selection and order status
+  $css_classes = 'number-of-boxes';
+  if ($number_of_boxes === '' || $number_of_boxes === null || $number_of_boxes === '0') {
+    $css_classes .= ' number-of-boxes-required';
+  } else {
+    $css_classes .= ' number-of-boxes-success';
+  }
+  
+  echo '<div class="' . esc_attr($css_classes) . '">';
+  echo '<h3>' . esc_html__('Number of Boxes', 'delivery-options-postnet-woocommerce') . '</h3>';
+  
+  // Show warning ONLY if no number is set AND order is completed AND no recent updates
+  if (($number_of_boxes === '' || $number_of_boxes === null || $number_of_boxes === '0') && $order_status === 'completed' && !$recently_updated && !$just_saved && !$session_saved) {
+    echo '<div class="number-of-boxes-warning" id="number-of-boxes-warning">';
+    echo esc_html__('Warning: This order is marked as completed but no number of boxes is specified. Waybill creation will fail.', 'delivery-options-postnet-woocommerce');
+    echo '</div>';
+  }
+  
+  // Show success message if number is set (regardless of order status)
+  if ($number_of_boxes !== '' && $number_of_boxes !== null && $number_of_boxes !== '0') {
+    echo '<div class="number-of-boxes-success" id="number-of-boxes-success">';
+    echo esc_html__('Number of boxes specified. Order can be completed and waybill will be created.', 'delivery-options-postnet-woocommerce');
+    echo '</div>';
+  }
+  
+  echo '<input type="number" name="number_of_boxes" id="number_of_boxes" min="1" step="1" value="' . esc_attr($number_of_boxes) . '" required />';
+  
+  // Add hidden field to track if number was just saved
+  if ($just_saved || $session_saved) {
+    echo '<input type="hidden" id="boxes-just-saved" value="1" />';
+  }
+  
+  if ($number_of_boxes === '' || $number_of_boxes === null || $number_of_boxes === '0') {
+    echo '<p class="description">' . esc_html__('⚠️ REQUIRED: Enter the number of boxes for this order. Waybill creation requires this value when User Specified option is selected.', 'delivery-options-postnet-woocommerce') . '</p>';
+  } else {
+    echo '<p class="description">' . esc_html__('✅ Number of boxes specified. Order can now be completed.', 'delivery-options-postnet-woocommerce') . '</p>';
+  }
+  
+  echo '</div>';
+  
+  // Add JavaScript to refresh indicators if this is a completed order with a number
+  if ($order_status === 'completed' && ($number_of_boxes !== '' && $number_of_boxes !== null && $number_of_boxes !== '0')) {
+    echo '<script type="text/javascript">
+      jQuery(document).ready(function($) {
+        setTimeout(function() {
+          if (typeof refreshNumberOfBoxesIndicators === "function") {
+            refreshNumberOfBoxesIndicators();
+          }
+        }, 200);
+      });
+    </script>';
+  }
+  
+  // Add JavaScript to immediately remove warnings if number was just saved
+  if ($just_saved || $session_saved) {
+    echo '<script type="text/javascript">
+      jQuery(document).ready(function($) {
+        $(".number-of-boxes-warning").remove();
+        $(".number-of-boxes").removeClass("number-of-boxes-required").addClass("number-of-boxes-success");
+      });
+    </script>';
+  }
+}
+
+/**
+ * Save number of boxes from admin order page
+ */
+function wc_postnet_delivery_save_admin_number_of_boxes_field($order_id, $post) {
+  if (isset($_POST['number_of_boxes'])) {
+    $number_of_boxes = intval($_POST['number_of_boxes']);
+    if ($number_of_boxes > 0) {
+      update_post_meta($order_id, '_number_of_boxes', $number_of_boxes);
+      
+      // Add a flag to indicate the number of boxes was updated
+      update_post_meta($order_id, '_number_of_boxes_updated', current_time('timestamp'));
+      
+      // Set a session flag to indicate the number was just saved
+      if (!session_id()) {
+        session_start();
+      }
+      $_SESSION['postnet_boxes_saved_' . $order_id] = true;
+    }
+  }
+}
+
+/**
  * Create waybill when order status is changed to Completed (Multi Site Mode)
  * Uses the unified waybill creation method
  */
@@ -1662,6 +1788,14 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
     'order_total' => (float) $order->get_total(),
     'order_items' => []
   ];
+  
+  // Add number_of_boxes if waybill_option is 'user_specified'
+  if (isset($options['waybill_option']) && $options['waybill_option'] === 'user_specified') {
+    $number_of_boxes = get_post_meta($order->get_id(), '_number_of_boxes', true);
+    if ($number_of_boxes && intval($number_of_boxes) > 0) {
+      $data['number_of_boxes'] = intval($number_of_boxes);
+    }
+  }
   
   // Add collection address fields if provided (Multi Site Mode)
   if ($collection_address) {
@@ -1838,6 +1972,59 @@ function wc_postnet_delivery_validate_collection_address_before_completion($orde
     
   } catch (Exception $e) {
     error_log('PostNet: Exception in validation function: ' . $e->getMessage());
+    error_log('PostNet: Stack trace: ' . $e->getTraceAsString());
+    // Don't block the order save if validation fails due to an error
+    return;
+  }
+}
+
+/**
+ * Validate number of boxes selection before allowing order completion
+ */
+function wc_postnet_delivery_validate_number_of_boxes_before_completion($order, $data_store) {
+  try {
+    // Validate input parameters
+    if (!$order || !is_object($order)) {
+      error_log('PostNet: Invalid order object in number of boxes validation function');
+      return;
+    }
+    
+    $options = get_option('wc_postnet_delivery_options');
+    if (!$options) {
+      error_log('PostNet: No plugin options found in number of boxes validation function');
+      return;
+    }
+    
+    // Only validate if waybill_option is 'user_specified'
+    if (!isset($options['waybill_option']) || $options['waybill_option'] !== 'user_specified') {
+      return;
+    }
+    
+    // Get the current order status and the new status being set
+    $current_status = $order->get_status();
+    $new_status = $order->get_status();
+    
+    // Check if we're trying to change to 'completed' status
+    if (isset($_POST['order_status']) && $_POST['order_status'] === 'wc-completed') {
+      $new_status = 'completed';
+    }
+    
+    // If the status is being changed to 'completed', validate number of boxes
+    if ($new_status === 'completed') {
+      $number_of_boxes = get_post_meta($order->get_id(), '_number_of_boxes', true);
+      
+      if ($number_of_boxes === '' || $number_of_boxes === null || $number_of_boxes === '0' || intval($number_of_boxes) < 1) {
+        // Prevent the status change and show error
+        wp_die(
+          '<div class="notice notice-error"><p><strong>Error:</strong> Cannot complete order. The number of boxes must be specified before marking the order as completed when User Specified waybill option is selected.</p></div>',
+          'Number of Boxes Required',
+          array('back_link' => true)
+        );
+      }
+    }
+    
+  } catch (Exception $e) {
+    error_log('PostNet: Exception in number of boxes validation function: ' . $e->getMessage());
     error_log('PostNet: Stack trace: ' . $e->getTraceAsString());
     // Don't block the order save if validation fails due to an error
     return;
