@@ -12,6 +12,10 @@
     let markers = [];
     let selectedMarker = null;
     let storeDetails = {}; // Cache for store details
+    let currentAddress = null; // Track current delivery address
+    let addressObserver = null; // Observer for address changes
+    let allStores = []; // All available stores
+    let selectedStore = null; // Currently selected store details
     
     // Debug logging helper
     function log(message, data) {
@@ -55,6 +59,9 @@
         
         // Set up mutation observer to watch for DOM changes
         setupMutationObserver();
+        
+        // Set up address change detection
+        setupAddressChangeDetection();
     }
     
     // Register with WooCommerce Blocks API
@@ -230,6 +237,128 @@
             subtree: true,
             attributes: true,
             attributeFilter: ['class', 'checked']
+        });
+    }
+    
+    // Set up address change detection
+    function setupAddressChangeDetection() {
+        // Function to get current delivery address
+        function getCurrentAddress() {
+            // Try to get address from WooCommerce Blocks checkout fields
+            const addressFields = document.querySelectorAll(
+                '.wc-block-components-address-form input, ' +
+                '.wc-block-components-address-form select'
+            );
+            
+            const address = {
+                address_1: '',
+                address_2: '',
+                city: '',
+                state: '',
+                postcode: '',
+                country: ''
+            };
+            
+            addressFields.forEach(field => {
+                const name = field.name || field.id || '';
+                if (name.includes('address_1') || name.includes('address-1')) {
+                    address.address_1 = field.value || '';
+                } else if (name.includes('address_2') || name.includes('address-2')) {
+                    address.address_2 = field.value || '';
+                } else if (name.includes('city')) {
+                    address.city = field.value || '';
+                } else if (name.includes('state') || name.includes('province')) {
+                    address.state = field.value || '';
+                } else if (name.includes('postcode') || name.includes('postal')) {
+                    address.postcode = field.value || '';
+                } else if (name.includes('country')) {
+                    address.country = field.value || '';
+                }
+            });
+            
+            return JSON.stringify(address);
+        }
+        
+        // Initialize current address
+        currentAddress = getCurrentAddress();
+        
+        // Watch for address field changes
+        if (addressObserver) {
+            addressObserver.disconnect();
+        }
+        
+        addressObserver = new MutationObserver(function() {
+            const newAddress = getCurrentAddress();
+            if (newAddress !== currentAddress && newAddress !== '{"address_1":"","address_2":"","city":"","state":"","postcode":"","country":""}') {
+                log('Delivery address changed, will re-fetch stores');
+                currentAddress = newAddress;
+                
+                // If PostNet shipping is selected, re-fetch stores and select closest
+                if (isPostNetShippingSelected()) {
+                    const selectorContainer = document.getElementById('postnet-store-selector-container');
+                    if (selectorContainer) {
+                        // Clear previous selection
+                        localStorage.removeItem('postnet_selected_store');
+                        document.cookie = 'postnet_selected_store=; path=/; max-age=0';
+                        
+                        // Re-fetch stores (this will auto-select the closest one)
+                        setTimeout(() => {
+                            fetchPostNetStores(selectorContainer);
+                        }, 500); // Small delay to ensure address is saved
+                    }
+                }
+            }
+        });
+        
+        // Observe address input fields
+        const addressContainer = document.querySelector(
+            '.wc-block-components-address-form, ' +
+            '.wc-block-checkout__shipping-fields, ' +
+            '.woocommerce-shipping-fields'
+        );
+        
+        if (addressContainer) {
+            addressObserver.observe(addressContainer, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['value']
+            });
+        }
+        
+        // Also listen for input events on address fields
+        document.body.addEventListener('input', function(e) {
+            if (e.target && (
+                e.target.name && (
+                    e.target.name.includes('address') ||
+                    e.target.name.includes('city') ||
+                    e.target.name.includes('state') ||
+                    e.target.name.includes('postcode') ||
+                    e.target.name.includes('postal')
+                )
+            )) {
+                const newAddress = getCurrentAddress();
+                if (newAddress !== currentAddress && newAddress !== '{"address_1":"","address_2":"","city":"","state":"","postcode":"","country":""}') {
+                    log('Delivery address changed via input event');
+                    currentAddress = newAddress;
+                    
+                    // Debounce the store re-fetch
+                    clearTimeout(window.postnetAddressChangeTimeout);
+                    window.postnetAddressChangeTimeout = setTimeout(() => {
+                        if (isPostNetShippingSelected()) {
+                            const selectorContainer = document.getElementById('postnet-store-selector-container');
+                            if (selectorContainer) {
+                                // Clear previous selection
+                                localStorage.removeItem('postnet_selected_store');
+                                document.cookie = 'postnet_selected_store=; path=/; max-age=0';
+                                
+                                // Re-fetch stores
+                                fetchPostNetStores(selectorContainer);
+                            }
+                        }
+                    }, 1000); // 1 second debounce
+                }
+            }
         });
     }
     
@@ -489,7 +618,12 @@
             log('Stores response received', data);
             if (data.success && data.data && data.data.length > 0) {
                 allStores = data.data;
-                if (!getSelectedStore()) { setSelectedStore(data.data[0]); }
+                // Always select the first store (closest to delivery address) when stores are loaded
+                // Clear any previous selection to ensure we get the closest store for the current address
+                if (data.data[0] && data.data[0].code) {
+                    log('Auto-selecting closest store:', data.data[0].name);
+                    setSelectedStore(data.data[0]);
+                }
                 renderStoreSelector(container, data.data);
             } else {
                 throw new Error('Invalid store data received');
@@ -596,11 +730,19 @@
             }
         });
         
-        // Set previously selected store if exists
-        const savedStore = getSelectedStore();
-        if (savedStore) {
-            select.value = savedStore;
-            log('Restored previously selected store', savedStore);
+        // Auto-select first store (closest) if available
+        if (stores.length > 0 && stores[0] && stores[0].code) {
+            const firstStoreValue = JSON.stringify([stores[0].code, stores[0].name]);
+            select.value = firstStoreValue;
+            selectStoreFromDropdown(stores[0].code, stores[0].name, firstStoreValue);
+            log('Auto-selected closest store in dropdown:', stores[0].name);
+        } else {
+            // Fallback to saved store if no stores available
+            const savedStore = getSelectedStore();
+            if (savedStore) {
+                select.value = savedStore;
+                log('Restored previously selected store', savedStore);
+            }
         }
         
         // Add change event handler
@@ -895,6 +1037,18 @@
         validationMsg.id = 'postnet-store-validation';
         validationMsg.style.display = 'none';
         container.appendChild(validationMsg);
+    }
+    
+    // Select a store from dropdown (wrapper for selectStore)
+    function selectStoreFromDropdown(storeCode, storeName, storeValue) {
+        log('Selecting store from dropdown:', storeCode, storeName);
+        selectStore(storeCode, storeName);
+        
+        // Also update the dropdown if it exists
+        const dropdown = document.getElementById('postnet-store-select');
+        if (dropdown && storeValue) {
+            dropdown.value = storeValue;
+        }
     }
     
     // Select a store
