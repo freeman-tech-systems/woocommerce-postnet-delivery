@@ -144,7 +144,7 @@ function wc_postnet_delivery_options_page() {
     ];
   }
   
-  $stores = json_decode(wc_postnet_fetch_url('https://www.postnet.co.za/cart_store-json_list/'));
+  $stores = json_decode(wc_postnet_fetch_url('https://www.postnet.co.za/cart_store-json_list/?local=1'));
   error_log(print_r($stores, true));
   $selected_store = isset($options['postnet_store']) ? esc_attr($options['postnet_store']) : '';
   ?>
@@ -1295,7 +1295,7 @@ function wc_postnet_delivery_get_store_details() {
   }
   
   // Get all stores
-  $all_stores = json_decode(wc_postnet_fetch_url('https://www.postnet.co.za/cart_store-json_list/'));
+  $all_stores = json_decode(wc_postnet_fetch_url('https://www.postnet.co.za/cart_store-json_list/?local=1'));
   
   // Find the matching store
   $store_details = null;
