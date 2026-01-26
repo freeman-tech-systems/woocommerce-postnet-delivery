@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.7.2
 Requires PHP: 7.4
-Stable tag: 1.0.9
+Stable tag: 1.0.10
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -84,6 +84,11 @@ When Multi Site Mode is enabled:
 * The selected collection address will be used as the originating address on the waybill
 
 == Changelog ==
+= 1.0.10 =
+* Added flat rate options for Regional Centre - Express, Regional Centre - Economy, Main Centre - Express, and Main Centre - Economy delivery options
+* Flat rates can be configured in settings; if set, they override individual product calculations
+* If flat rates are left blank, the plugin continues to use individual product-based fee calculations
+
 = 1.0.8 =
 * Added Multi Site Mode support
 * Added multiple collection addresses configuration
