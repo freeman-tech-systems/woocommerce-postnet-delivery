@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
  * Plugin Name: Delivery Options For PostNet
  * Plugin URI: https://github.com/freeman-tech-systems/woocommerce-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
- * Version: 1.0.9
+ * Version: 1.0.10
  * Author: Freeman Tech Systems
  * Author URI: https://github.com/freeman-tech-systems
  * License: GPL2
@@ -73,6 +73,10 @@ function wc_postnet_delivery_settings_init() {
         'collection_type' => 'always_collect',
         'waybill_option' => 'single',
         'postnet_to_postnet_fee' => '',
+        'regional_centre_express_fee' => '',
+        'regional_centre_economy_fee' => '',
+        'main_centre_express_fee' => '',
+        'main_centre_economy_fee' => '',
         'order_amount_threshold' => '',
         'postnet_store' => '',
         'postnet_api_key' => '',
@@ -180,6 +184,34 @@ function wc_postnet_delivery_options_page() {
           <th scope="row"><label for="postnet_to_postnet_fee"><?php echo esc_html__('PostNet to PostNet Delivery Fee', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
             <input type="number" name="wc_postnet_delivery_options[postnet_to_postnet_fee]" value="<?php echo esc_attr(isset($options['postnet_to_postnet_fee']) ? $options['postnet_to_postnet_fee'] : ''); ?>" required />
+          </td>
+        </tr>
+        <tr>
+          <th scope="row"><label for="regional_centre_express_fee"><?php echo esc_html__('Regional Centre - Express', 'delivery-options-postnet-woocommerce'); ?></label></th>
+          <td>
+            <input type="number" name="wc_postnet_delivery_options[regional_centre_express_fee]" value="<?php echo esc_attr(isset($options['regional_centre_express_fee']) ? $options['regional_centre_express_fee'] : ''); ?>" step="any" min="0" />
+            <p class="description"><?php echo esc_html__('Flat rate for Regional Centre - Express. Leave blank to use individual product calculations.', 'delivery-options-postnet-woocommerce'); ?></p>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row"><label for="regional_centre_economy_fee"><?php echo esc_html__('Regional Centre - Economy', 'delivery-options-postnet-woocommerce'); ?></label></th>
+          <td>
+            <input type="number" name="wc_postnet_delivery_options[regional_centre_economy_fee]" value="<?php echo esc_attr(isset($options['regional_centre_economy_fee']) ? $options['regional_centre_economy_fee'] : ''); ?>" step="any" min="0" />
+            <p class="description"><?php echo esc_html__('Flat rate for Regional Centre - Economy. Leave blank to use individual product calculations.', 'delivery-options-postnet-woocommerce'); ?></p>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row"><label for="main_centre_express_fee"><?php echo esc_html__('Main Centre - Express', 'delivery-options-postnet-woocommerce'); ?></label></th>
+          <td>
+            <input type="number" name="wc_postnet_delivery_options[main_centre_express_fee]" value="<?php echo esc_attr(isset($options['main_centre_express_fee']) ? $options['main_centre_express_fee'] : ''); ?>" step="any" min="0" />
+            <p class="description"><?php echo esc_html__('Flat rate for Main Centre - Express. Leave blank to use individual product calculations.', 'delivery-options-postnet-woocommerce'); ?></p>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row"><label for="main_centre_economy_fee"><?php echo esc_html__('Main Centre - Economy', 'delivery-options-postnet-woocommerce'); ?></label></th>
+          <td>
+            <input type="number" name="wc_postnet_delivery_options[main_centre_economy_fee]" value="<?php echo esc_attr(isset($options['main_centre_economy_fee']) ? $options['main_centre_economy_fee'] : ''); ?>" step="any" min="0" />
+            <p class="description"><?php echo esc_html__('Flat rate for Main Centre - Economy. Leave blank to use individual product calculations.', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
         <tr>
@@ -718,18 +750,22 @@ function wc_postnet_delivery_custom_shipping_methods_logic($rates, $package) {
         break;
       case POSTNET_SHIPPING_EXPRESS:
         if (!$free_shipping && $is_main && in_array('main_centre_express', $enabled_services)){
-          $rate->cost = wc_postnet_delivery_service_fee($package, 'main_centre_express');
+          $flat_rate = isset($options['main_centre_express_fee']) && $options['main_centre_express_fee'] !== '' ? floatval($options['main_centre_express_fee']) : null;
+          $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'main_centre_express');
         } else if (!$free_shipping && !$is_main && in_array('regional_centre_express', $enabled_services)){
-          $rate->cost = wc_postnet_delivery_service_fee($package, 'regional_centre_express');
+          $flat_rate = isset($options['regional_centre_express_fee']) && $options['regional_centre_express_fee'] !== '' ? floatval($options['regional_centre_express_fee']) : null;
+          $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'regional_centre_express');
         } else {
           unset($rates[$rate_id]);
         }
         break;
       case POSTNET_SHIPPING_ECONOMY:
         if (!$free_shipping && $is_main && in_array('main_centre_economy', $enabled_services)){
-          $rate->cost = wc_postnet_delivery_service_fee($package, 'main_centre_economy');
+          $flat_rate = isset($options['main_centre_economy_fee']) && $options['main_centre_economy_fee'] !== '' ? floatval($options['main_centre_economy_fee']) : null;
+          $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'main_centre_economy');
         } else if (!$free_shipping && !$is_main && in_array('regional_centre_economy', $enabled_services)){
-          $rate->cost = wc_postnet_delivery_service_fee($package, 'regional_centre_economy');
+          $flat_rate = isset($options['regional_centre_economy_fee']) && $options['regional_centre_economy_fee'] !== '' ? floatval($options['regional_centre_economy_fee']) : null;
+          $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'regional_centre_economy');
         } else {
           unset($rates[$rate_id]);
         }
@@ -1083,6 +1119,22 @@ function wc_postnet_delivery_sanitize_options($input) {
   // Sanitize numeric fields
   $sanitized['postnet_to_postnet_fee'] = isset($input['postnet_to_postnet_fee']) 
     ? floatval($input['postnet_to_postnet_fee']) 
+    : '';
+  
+  $sanitized['regional_centre_express_fee'] = isset($input['regional_centre_express_fee']) 
+    ? floatval($input['regional_centre_express_fee']) 
+    : '';
+  
+  $sanitized['regional_centre_economy_fee'] = isset($input['regional_centre_economy_fee']) 
+    ? floatval($input['regional_centre_economy_fee']) 
+    : '';
+  
+  $sanitized['main_centre_express_fee'] = isset($input['main_centre_express_fee']) 
+    ? floatval($input['main_centre_express_fee']) 
+    : '';
+  
+  $sanitized['main_centre_economy_fee'] = isset($input['main_centre_economy_fee']) 
+    ? floatval($input['main_centre_economy_fee']) 
     : '';
   
   $sanitized['order_amount_threshold'] = isset($input['order_amount_threshold']) 
