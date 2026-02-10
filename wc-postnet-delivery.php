@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
  * Plugin Name: Delivery Options For PostNet
  * Plugin URI: https://github.com/freeman-tech-systems/woocommerce-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
- * Version: 1.0.10
+ * Version: 1.0.11
  * Author: Freeman Tech Systems
  * Author URI: https://github.com/freeman-tech-systems
  * License: GPL2
@@ -17,6 +17,12 @@ const POSTNET_SHIPPING_FREE = 'PostNet Free Shipping';
 const POSTNET_SHIPPING_STORE = 'Collect at PostNet';
 const POSTNET_SHIPPING_EXPRESS = 'PostNet Door Delivery - Express';
 const POSTNET_SHIPPING_ECONOMY = 'PostNet Door Delivery - Economy';
+
+/** Internal method IDs used to identify PostNet shipping options (not editable by user) */
+const POSTNET_METHOD_ID_FREE = 'postnet_free';
+const POSTNET_METHOD_ID_STORE = 'postnet_store';
+const POSTNET_METHOD_ID_EXPRESS = 'postnet_express';
+const POSTNET_METHOD_ID_ECONOMY = 'postnet_economy';
 
 add_action('admin_enqueue_scripts', 'wc_postnet_delivery_enqueue_scripts');
 add_action('admin_init', 'wc_postnet_delivery_admin');
@@ -83,7 +89,8 @@ function wc_postnet_delivery_settings_init() {
         'postnet_api_passcode' => '',
         'google_api_key' => '',
         'multi_site_mode' => false,
-        'collection_addresses' => array()
+        'collection_addresses' => array(),
+        'postnet_shipping_instance_ids' => array()
       )
     )
   );
@@ -587,36 +594,108 @@ function wc_postnet_delivery_import_products_csv() {
   }
 }
 
+/**
+ * Internal PostNet method IDs to default titles (for creation only).
+ *
+ * @return array Map of POSTNET_METHOD_ID_* => default method title
+ */
+function wc_postnet_delivery_get_postnet_method_specs() {
+  return array(
+    POSTNET_METHOD_ID_FREE => POSTNET_SHIPPING_FREE,
+    POSTNET_METHOD_ID_STORE => POSTNET_SHIPPING_STORE,
+    POSTNET_METHOD_ID_EXPRESS => POSTNET_SHIPPING_EXPRESS,
+    POSTNET_METHOD_ID_ECONOMY => POSTNET_SHIPPING_ECONOMY,
+  );
+}
+
+/**
+ * Get the WooCommerce rate id (e.g. flat_rate:3) for a PostNet method by internal id.
+ * Uses stored instance IDs so we do not rely on editable titles.
+ *
+ * @param string $internal_id One of POSTNET_METHOD_ID_FREE, POSTNET_METHOD_ID_STORE, etc.
+ * @return string|null Rate id like 'flat_rate:3' or null if not configured
+ */
+function wc_postnet_delivery_get_postnet_rate_id($internal_id) {
+  $options = get_option('wc_postnet_delivery_options');
+  $instance_ids = isset($options['postnet_shipping_instance_ids']) && is_array($options['postnet_shipping_instance_ids'])
+    ? $options['postnet_shipping_instance_ids']
+    : array();
+  $instance_id = isset($instance_ids[$internal_id]) ? (int) $instance_ids[$internal_id] : 0;
+  if ($instance_id <= 0) {
+    return null;
+  }
+  return 'flat_rate:' . $instance_id;
+}
+
+/**
+ * Get the internal PostNet method id for a WooCommerce rate id (e.g. flat_rate:3).
+ *
+ * @param string $rate_id Rate id like 'flat_rate:3'
+ * @return string|null One of POSTNET_METHOD_ID_* or null if not a PostNet method
+ */
+function wc_postnet_delivery_get_postnet_internal_id_for_rate($rate_id) {
+  if (strpos($rate_id, 'flat_rate:') !== 0) {
+    return null;
+  }
+  $instance_id = (int) substr($rate_id, strlen('flat_rate:'));
+  if ($instance_id <= 0) {
+    return null;
+  }
+  $options = get_option('wc_postnet_delivery_options');
+  $instance_ids = isset($options['postnet_shipping_instance_ids']) && is_array($options['postnet_shipping_instance_ids'])
+    ? $options['postnet_shipping_instance_ids']
+    : array();
+  foreach ($instance_ids as $internal_id => $stored_id) {
+    if ((int) $stored_id === $instance_id) {
+      return $internal_id;
+    }
+  }
+  return null;
+}
+
 function wc_postnet_delivery_configure_shipping_options() {
   $zone = wc_postnet_delivery_get_zone();
-  
-  // Method IDs for the custom methods you're interested in
-  $required_methods = array(
-    POSTNET_SHIPPING_FREE=>'flat_rate',
-    POSTNET_SHIPPING_STORE=>'flat_rate',
-    POSTNET_SHIPPING_EXPRESS=>'flat_rate',
-    POSTNET_SHIPPING_ECONOMY=>'flat_rate',
-  );
+  $options = get_option('wc_postnet_delivery_options');
+  $instance_ids = isset($options['postnet_shipping_instance_ids']) && is_array($options['postnet_shipping_instance_ids'])
+    ? $options['postnet_shipping_instance_ids']
+    : array();
 
-  // Get existing methods for the zone
+  $specs = wc_postnet_delivery_get_postnet_method_specs();
   $existing_methods = $zone->get_shipping_methods(true);
+  $existing_instance_ids = array();
+  foreach ($existing_methods as $method) {
+    if ($method->id === 'flat_rate' && isset($method->instance_id)) {
+      $existing_instance_ids[$method->instance_id] = $method;
+    }
+  }
 
-  // Check if your required methods exist
-  foreach ($required_methods as $method_title=>$method_type) {
+  foreach ($specs as $internal_id => $default_title) {
+    $stored_instance_id = isset($instance_ids[$internal_id]) ? (int) $instance_ids[$internal_id] : 0;
     $found = false;
-    foreach ($existing_methods as $method) {
-      if ($method->title === $method_title) {
-        $found = true;
-        break;
+
+    if ($stored_instance_id > 0 && isset($existing_instance_ids[$stored_instance_id])) {
+      $found = true;
+    } else {
+      foreach ($existing_methods as $method) {
+        if ($method->id === 'flat_rate' && $method->title === $default_title) {
+          $instance_ids[$internal_id] = (int) $method->instance_id;
+          $found = true;
+          break;
+        }
       }
     }
 
-    // If not found, add the method
     if (!$found) {
-      wc_postnet_delivery_create_shipping_option($zone, $method_type, $method_title);
+      $instance_id = wc_postnet_delivery_create_shipping_option($zone, 'flat_rate', $default_title);
+      if ($instance_id > 0) {
+        $instance_ids[$internal_id] = $instance_id;
+      }
     }
   }
-  
+
+  $options['postnet_shipping_instance_ids'] = $instance_ids;
+  update_option('wc_postnet_delivery_options', $options);
+
   wp_safe_redirect(add_query_arg('shipping_configured', '1', menu_page_url('wc_postnet_delivery', false)));
 }
 
@@ -644,22 +723,28 @@ function wc_postnet_delivery_get_zone() {
   }
 }
 
+/**
+ * Create a flat rate shipping method in the zone and set its title/cost.
+ *
+ * @param WC_Shipping_Zone $zone
+ * @param string $method_type e.g. 'flat_rate'
+ * @param string $method_title Display title for the method
+ * @return int The new instance_id, or 0 on failure
+ */
 function wc_postnet_delivery_create_shipping_option($zone, $method_type, $method_title) {
-  // Instance ID for the new method -- set to 0 to auto-assign
-  $instance_id = $zone->add_shipping_method($method_type);
-  
-  $option_name = 'woocommerce_flat_rate_' . $instance_id . '_settings'; // Construct the option name
+  $instance_id = (int) $zone->add_shipping_method($method_type);
+  if ($instance_id <= 0) {
+    return 0;
+  }
 
-  // Retrieve the existing settings
+  $option_name = 'woocommerce_flat_rate_' . $instance_id . '_settings';
   $instance_settings = get_option($option_name, array());
-
-  // Update specific settings
-  $instance_settings['title'] = $method_title; // Setting the title
-  $instance_settings['cost'] = '0.00'; // Setting the flat rate cost
-  $instance_settings['tax_status'] = 'taxable'; // Setting the tax status
-
-  // Save the updated settings back
+  $instance_settings['title'] = $method_title;
+  $instance_settings['cost'] = '0.00';
+  $instance_settings['tax_status'] = 'taxable';
   update_option($option_name, $instance_settings);
+
+  return $instance_id;
 }
 
 function woocommerce_postnet_delivery_show_shipping_configured_notice() {
@@ -736,40 +821,47 @@ function wc_postnet_delivery_custom_shipping_methods_logic($rates, $package) {
   $enabled_services = isset($options['service_type']) ? $options['service_type'] : array();
   $free_shipping = $order_amount_threshold > 0 && $subtotal >= $order_amount_threshold;
   
+  $postnet_rate_free = wc_postnet_delivery_get_postnet_rate_id(POSTNET_METHOD_ID_FREE);
+  $postnet_rate_store = wc_postnet_delivery_get_postnet_rate_id(POSTNET_METHOD_ID_STORE);
+  $postnet_rate_express = wc_postnet_delivery_get_postnet_rate_id(POSTNET_METHOD_ID_EXPRESS);
+  $postnet_rate_economy = wc_postnet_delivery_get_postnet_rate_id(POSTNET_METHOD_ID_ECONOMY);
+
   foreach ($rates as $rate_id => $rate) {
-    switch ($rate->label){
-      case POSTNET_SHIPPING_FREE:
-        if (!$free_shipping) unset($rates[$rate_id]);
-        break;
-      case POSTNET_SHIPPING_STORE:
-        if (!$free_shipping && in_array('postnet_to_postnet', $enabled_services)){
-          $rate->cost = $postnet_to_postnet_fee;
-        } else {
-          unset($rates[$rate_id]);
-        }
-        break;
-      case POSTNET_SHIPPING_EXPRESS:
-        if (!$free_shipping && $is_main && in_array('main_centre_express', $enabled_services)){
-          $flat_rate = isset($options['main_centre_express_fee']) && $options['main_centre_express_fee'] !== '' ? floatval($options['main_centre_express_fee']) : null;
-          $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'main_centre_express');
-        } else if (!$free_shipping && !$is_main && in_array('regional_centre_express', $enabled_services)){
-          $flat_rate = isset($options['regional_centre_express_fee']) && $options['regional_centre_express_fee'] !== '' ? floatval($options['regional_centre_express_fee']) : null;
-          $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'regional_centre_express');
-        } else {
-          unset($rates[$rate_id]);
-        }
-        break;
-      case POSTNET_SHIPPING_ECONOMY:
-        if (!$free_shipping && $is_main && in_array('main_centre_economy', $enabled_services)){
-          $flat_rate = isset($options['main_centre_economy_fee']) && $options['main_centre_economy_fee'] !== '' ? floatval($options['main_centre_economy_fee']) : null;
-          $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'main_centre_economy');
-        } else if (!$free_shipping && !$is_main && in_array('regional_centre_economy', $enabled_services)){
-          $flat_rate = isset($options['regional_centre_economy_fee']) && $options['regional_centre_economy_fee'] !== '' ? floatval($options['regional_centre_economy_fee']) : null;
-          $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'regional_centre_economy');
-        } else {
-          unset($rates[$rate_id]);
-        }
-        break;
+    if ($rate_id === $postnet_rate_free) {
+      if (!$free_shipping) unset($rates[$rate_id]);
+      continue;
+    }
+    if ($rate_id === $postnet_rate_store) {
+      if (!$free_shipping && in_array('postnet_to_postnet', $enabled_services)){
+        $rate->cost = $postnet_to_postnet_fee;
+      } else {
+        unset($rates[$rate_id]);
+      }
+      continue;
+    }
+    if ($rate_id === $postnet_rate_express) {
+      if (!$free_shipping && $is_main && in_array('main_centre_express', $enabled_services)){
+        $flat_rate = isset($options['main_centre_express_fee']) && $options['main_centre_express_fee'] !== '' ? floatval($options['main_centre_express_fee']) : null;
+        $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'main_centre_express');
+      } else if (!$free_shipping && !$is_main && in_array('regional_centre_express', $enabled_services)){
+        $flat_rate = isset($options['regional_centre_express_fee']) && $options['regional_centre_express_fee'] !== '' ? floatval($options['regional_centre_express_fee']) : null;
+        $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'regional_centre_express');
+      } else {
+        unset($rates[$rate_id]);
+      }
+      continue;
+    }
+    if ($rate_id === $postnet_rate_economy) {
+      if (!$free_shipping && $is_main && in_array('main_centre_economy', $enabled_services)){
+        $flat_rate = isset($options['main_centre_economy_fee']) && $options['main_centre_economy_fee'] !== '' ? floatval($options['main_centre_economy_fee']) : null;
+        $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'main_centre_economy');
+      } else if (!$free_shipping && !$is_main && in_array('regional_centre_economy', $enabled_services)){
+        $flat_rate = isset($options['regional_centre_economy_fee']) && $options['regional_centre_economy_fee'] !== '' ? floatval($options['regional_centre_economy_fee']) : null;
+        $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'regional_centre_economy');
+      } else {
+        unset($rates[$rate_id]);
+      }
+      continue;
     }
   }
   
@@ -844,7 +936,8 @@ function wc_postnet_delivery_checkout_field($rate) {
   // The chosen methods are stored in an array, one for each package. Most stores will only have one package.
   $chosen_method = !empty($chosen_methods) ? $chosen_methods[0] : '';
 
-  if ($rate->label != POSTNET_SHIPPING_STORE || $rate->id !== $chosen_method) return;
+  $postnet_store_rate_id = wc_postnet_delivery_get_postnet_rate_id(POSTNET_METHOD_ID_STORE);
+  if ($postnet_store_rate_id === null || $rate->id !== $postnet_store_rate_id || $rate->id !== $chosen_method) return;
   
   // Get available stores
   $stores = wc_postnet_delivery_fetch_stores();
@@ -949,17 +1042,8 @@ function wc_postnet_delivery_validations() {
   $chosen_methods = WC()->session->get( 'chosen_shipping_methods' );
   $chosen_method = ! empty( $chosen_methods ) ? $chosen_methods[0] : '';
   
-  $zone = wc_postnet_delivery_get_zone();
-  $shipping_methods = $zone->get_shipping_methods();
-  $instance_id = 0;
-  foreach ($shipping_methods as $method){
-    if ($method->title == POSTNET_SHIPPING_STORE){
-      $instance_id = $method->instance_id;
-      break;
-    }
-  }
-  
-  if ($chosen_method != 'flat_rate:'.$instance_id) return;
+  $postnet_store_rate_id = wc_postnet_delivery_get_postnet_rate_id(POSTNET_METHOD_ID_STORE);
+  if ($postnet_store_rate_id === null || $chosen_method !== $postnet_store_rate_id) return;
   
   if ( ! isset($_POST['destination_store']) || empty($_POST['destination_store']) ) {
     wc_add_notice('<strong>Destination Store</strong> is a required field.', 'error' );
@@ -1073,9 +1157,9 @@ function wc_postnet_delivery_collection_notification($order_id){
   }
   
   if (!$rate) return;
-  
-  // If the shipping method is not POSTNET_SHIPPING_STORE, unset the destination store
-  if ($rate->title !== POSTNET_SHIPPING_STORE) {
+
+  $postnet_internal_id = wc_postnet_delivery_get_postnet_internal_id_for_rate($chosen_method);
+  if ($postnet_internal_id !== POSTNET_METHOD_ID_STORE) {
     delete_post_meta($order_id, 'Destination Store');
     error_log('PostNet: Unsetting destination store as shipping method is not PostNet to PostNet');
     return;
@@ -1178,6 +1262,20 @@ function wc_postnet_delivery_sanitize_options($input) {
     $sanitized['collection_addresses'] = array();
   }
 
+  // Preserve PostNet shipping instance IDs (set by "Configure PostNet Shipping", not in form)
+  $existing = get_option('wc_postnet_delivery_options', array());
+  if (isset($existing['postnet_shipping_instance_ids']) && is_array($existing['postnet_shipping_instance_ids'])) {
+    $sanitized['postnet_shipping_instance_ids'] = array();
+    $valid_internal_ids = array(POSTNET_METHOD_ID_FREE, POSTNET_METHOD_ID_STORE, POSTNET_METHOD_ID_EXPRESS, POSTNET_METHOD_ID_ECONOMY);
+    foreach ($existing['postnet_shipping_instance_ids'] as $internal_id => $instance_id) {
+      if (in_array($internal_id, $valid_internal_ids, true)) {
+        $sanitized['postnet_shipping_instance_ids'][$internal_id] = (int) $instance_id;
+      }
+    }
+  } else {
+    $sanitized['postnet_shipping_instance_ids'] = array();
+  }
+
   return $sanitized;
 }
 
@@ -1235,6 +1333,7 @@ function wc_postnet_delivery_enqueue_frontend_scripts() {
         'ajax_url' => admin_url('admin-ajax.php'),
         'nonce' => wp_create_nonce('wc_postnet_delivery_nonce'),
         'shipping_method_title' => POSTNET_SHIPPING_STORE,
+        'shipping_rate_id_store' => wc_postnet_delivery_get_postnet_rate_id(POSTNET_METHOD_ID_STORE),
         'debug_mode' => true,
         'version' => $version,
         'has_google_maps' => !empty($google_api_key),
@@ -1271,6 +1370,7 @@ function wc_postnet_delivery_enqueue_frontend_scripts() {
         'ajax_url' => admin_url('admin-ajax.php'),
         'nonce' => wp_create_nonce('wc_postnet_delivery_nonce'),
         'shipping_method_title' => POSTNET_SHIPPING_STORE,
+        'shipping_rate_id_store' => wc_postnet_delivery_get_postnet_rate_id(POSTNET_METHOD_ID_STORE),
       )
     );
   }
@@ -1803,19 +1903,20 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
     error_log('PostNet: Could not find matching shipping method for order ' . $order->get_id() . ' with method: ' . $chosen_method);
     return false;
   }
-  
+
+  $postnet_internal_id = wc_postnet_delivery_get_postnet_internal_id_for_rate($chosen_method);
   $service_type = ($is_main ? 'main' : 'regional').'_centre_';
   $destination_store = json_decode(get_post_meta($order->get_id(), 'Destination Store', true));
-  
-  switch ($rate->title) {
-    case POSTNET_SHIPPING_FREE:
-    case POSTNET_SHIPPING_EXPRESS:
+
+  switch ($postnet_internal_id) {
+    case POSTNET_METHOD_ID_FREE:
+    case POSTNET_METHOD_ID_EXPRESS:
       $service_type .= 'express';
       break;
-    case POSTNET_SHIPPING_STORE:
+    case POSTNET_METHOD_ID_STORE:
       $service_type = 'postnet_to_postnet';
       break;
-    case POSTNET_SHIPPING_ECONOMY:
+    case POSTNET_METHOD_ID_ECONOMY:
       $service_type .= 'economy';
       break;
     default:
