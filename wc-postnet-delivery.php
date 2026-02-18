@@ -663,6 +663,8 @@ function wc_postnet_delivery_get_postnet_internal_id_for_rate($rate_id) {
     return null;
   }
   $options = get_option('wc_postnet_delivery_options');
+  echo $rate_id;
+  echo '<pre>'.print_r($options, true).'</pre>';
   $instance_ids = isset($options['postnet_shipping_instance_ids']) && is_array($options['postnet_shipping_instance_ids'])
     ? $options['postnet_shipping_instance_ids']
     : array();
