@@ -663,8 +663,6 @@ function wc_postnet_delivery_get_postnet_internal_id_for_rate($rate_id) {
     return null;
   }
   $options = get_option('wc_postnet_delivery_options');
-  echo $rate_id;
-  echo '<pre>'.print_r($options, true).'</pre>';
   $instance_ids = isset($options['postnet_shipping_instance_ids']) && is_array($options['postnet_shipping_instance_ids'])
     ? $options['postnet_shipping_instance_ids']
     : array();
@@ -1133,7 +1131,7 @@ function wc_postnet_delivery_display_waybill_status($order) {
   $shipping_item = reset($shipping_items);
   $chosen_method = $shipping_item->get_method_id() . ':' . $shipping_item->get_instance_id();
   $postnet_internal_id = wc_postnet_delivery_get_postnet_internal_id_for_rate($chosen_method);
-  
+  echo $postnet_internal_id;
   // Only show for PostNet delivery methods
   if (!$postnet_internal_id || !in_array($postnet_internal_id, array(POSTNET_METHOD_ID_FREE, POSTNET_METHOD_ID_STORE, POSTNET_METHOD_ID_EXPRESS, POSTNET_METHOD_ID_ECONOMY))) {
     return;
