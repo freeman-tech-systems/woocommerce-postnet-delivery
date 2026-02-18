@@ -1132,6 +1132,7 @@ function wc_postnet_delivery_display_waybill_status($order) {
   $chosen_method = $shipping_item->get_method_id() . ':' . $shipping_item->get_instance_id();
   $postnet_internal_id = wc_postnet_delivery_get_postnet_internal_id_for_rate($chosen_method);
   echo $postnet_internal_id;
+  echo '<pre>'.print_r(array(POSTNET_METHOD_ID_FREE, POSTNET_METHOD_ID_STORE, POSTNET_METHOD_ID_EXPRESS, POSTNET_METHOD_ID_ECONOMY), true).'</pre>';
   // Only show for PostNet delivery methods
   if (!$postnet_internal_id || !in_array($postnet_internal_id, array(POSTNET_METHOD_ID_FREE, POSTNET_METHOD_ID_STORE, POSTNET_METHOD_ID_EXPRESS, POSTNET_METHOD_ID_ECONOMY))) {
     return;
