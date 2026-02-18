@@ -1131,8 +1131,7 @@ function wc_postnet_delivery_display_waybill_status($order) {
   $shipping_item = reset($shipping_items);
   $chosen_method = $shipping_item->get_method_id() . ':' . $shipping_item->get_instance_id();
   $postnet_internal_id = wc_postnet_delivery_get_postnet_internal_id_for_rate($chosen_method);
-  echo $postnet_internal_id;
-  echo '<pre>'.print_r(array(POSTNET_METHOD_ID_FREE, POSTNET_METHOD_ID_STORE, POSTNET_METHOD_ID_EXPRESS, POSTNET_METHOD_ID_ECONOMY), true).'</pre>';
+  
   // Only show for PostNet delivery methods
   if (!$postnet_internal_id || !in_array($postnet_internal_id, array(POSTNET_METHOD_ID_FREE, POSTNET_METHOD_ID_STORE, POSTNET_METHOD_ID_EXPRESS, POSTNET_METHOD_ID_ECONOMY))) {
     return;
@@ -1144,6 +1143,12 @@ function wc_postnet_delivery_display_waybill_status($order) {
   $creation_attempted = get_post_meta($order_id, '_waybill_creation_attempted', true);
   
   // Only show if waybill doesn't exist or there was a failed attempt
+  echo '<pre>Waybill Number: '.print_r($waybill_number, true).'</pre>';
+  echo '<pre>Creation Status: '.print_r($creation_status, true).'</pre>';
+  echo '<pre>Creation Attempted: '.print_r($creation_attempted, true).'</pre>';
+  echo '<pre>Creation Error: '.print_r($creation_error, true).'</pre>';
+  echo '<pre>Chosen Method: '.print_r($chosen_method, true).'</pre>';
+  echo '<pre>Postnet Internal ID: '.print_r($postnet_internal_id, true).'</pre>';
   if (empty($waybill_number) && ($creation_status === 'failed' || !empty($creation_attempted))) {
     echo '<div class="postnet-waybill-status" style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-left: 4px solid #dc3232;">';
     echo '<h3>' . esc_html__('PostNet Waybill Status', 'delivery-options-postnet-woocommerce') . '</h3>';
