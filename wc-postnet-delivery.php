@@ -1149,7 +1149,7 @@ function wc_postnet_delivery_display_waybill_status($order) {
   echo '<pre>Creation Error: '.print_r($creation_error, true).'</pre>';
   echo '<pre>Chosen Method: '.print_r($chosen_method, true).'</pre>';
   echo '<pre>Postnet Internal ID: '.print_r($postnet_internal_id, true).'</pre>';
-  if (empty($waybill_number) && ($creation_status === 'failed' || !empty($creation_attempted))) {
+  if (empty($waybill_number) && ($creation_status === 'failed' && !empty($creation_attempted)) || empty($creation_attempted)) {
     echo '<div class="postnet-waybill-status" style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-left: 4px solid #dc3232;">';
     echo '<h3>' . esc_html__('PostNet Waybill Status', 'delivery-options-postnet-woocommerce') . '</h3>';
     
