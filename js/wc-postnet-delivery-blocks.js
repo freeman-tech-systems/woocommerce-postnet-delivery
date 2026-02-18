@@ -362,51 +362,41 @@
         });
     }
     
-    // Check if PostNet shipping is selected
+    // Check if PostNet shipping is selected (prefer rate id so it works if user renames the method)
     function isPostNetShippingSelected() {
-        // Method 1: Check for radio buttons with labels
+        const storeRateId = window.wc_postnet_delivery_params && window.wc_postnet_delivery_params.shipping_rate_id_store;
+
+        // Method 1: Check by rate id (reliable even if user renamed the method)
+        const selectedMethod = document.querySelector('.wc-block-components-radio-control__input:checked, input[name="shipping_method"]:checked');
+        if (selectedMethod && selectedMethod.value && storeRateId && selectedMethod.value === storeRateId) {
+            log('PostNet shipping detected (rate id match)');
+            return true;
+        }
+
+        // Method 2: Fallback – check for radio buttons with labels (for backwards compatibility)
+        const postnetLabel = (window.wc_postnet_delivery_params && window.wc_postnet_delivery_params.shipping_method_title) || 'Collect at PostNet';
         const radioLabels = document.querySelectorAll('.wc-block-components-radio-control__label, .wc-block-shipping-rates-control__item-label');
         for (const label of radioLabels) {
-            if (label.textContent.includes('Collect at PostNet')) {
+            if (label.textContent.includes(postnetLabel)) {
                 const radioOption = label.closest('.wc-block-components-radio-control__option, .wc-block-shipping-rates-control__item');
                 if (radioOption) {
                     const radioInput = radioOption.querySelector('input[type="radio"]');
                     if (radioInput && radioInput.checked) {
-                        log('PostNet shipping detected (method 1)');
+                        log('PostNet shipping detected (label fallback)');
                         return true;
                     }
                 }
             }
         }
-        
-        // Method 2: Check text content of selected shipping method
-        const selectedMethod = document.querySelector('.wc-block-components-radio-control__input:checked, input[name="shipping_method"]:checked');
+
         if (selectedMethod) {
             const parentEl = selectedMethod.closest('.wc-block-components-radio-control__option, .wc-block-shipping-rates-control__item');
-            if (parentEl && parentEl.textContent.includes('Collect at PostNet')) {
-                log('PostNet shipping detected (method 2)');
+            if (parentEl && parentEl.textContent.includes(postnetLabel)) {
+                log('PostNet shipping detected (parent label fallback)');
                 return true;
             }
         }
-        
-        // Method 3: Look for any visible text indicating PostNet is selected
-        const shippingSection = document.querySelector(
-            '.wc-block-components-shipping-rates-control, ' +
-            '.wc-block-checkout__shipping-option, ' +
-            '.wc-block-shipping-totals'
-        );
-        
-        if (shippingSection) {
-            const inputs = shippingSection.querySelectorAll('input[type="radio"]:checked');
-            for (const input of inputs) {
-                const label = input.closest('label, div');
-                if (label && label.textContent.includes('Collect at PostNet')) {
-                    log('PostNet shipping detected (method 3)');
-                    return true;
-                }
-            }
-        }
-        
+
         log('PostNet shipping not detected');
         return false;
     }
