@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.7.2
 Requires PHP: 7.4
-Stable tag: 1.0.11
+Stable tag: 1.0.12
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -84,6 +84,11 @@ When Multi Site Mode is enabled:
 * The selected collection address will be used as the originating address on the waybill
 
 == Changelog ==
+= 1.0.12 =
+* Fixed waybill creation failures on WooCommerce order processing
+* Added waybill status display and retry button on admin order screen
+* Improved order page detection for both classic and HPOS (High-Performance Order Storage) modes
+
 = 1.0.11 =
 * PostNet shipping options are now identified by stored instance IDs instead of method titles
 * Clicking "Configure PostNet Shipping" saves a unique reference for each created option so the plugin continues to work correctly if you rename the methods in WooCommerce
