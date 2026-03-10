@@ -31,6 +31,7 @@ add_action('admin_menu', 'wc_postnet_delivery_settings_page');
 add_action('admin_notices', 'woocommerce_postnet_delivery_show_shipping_configured_notice');
 add_action('before_woocommerce_init', 'wc_postnet_delivery_compatibility');
 add_action('woocommerce_admin_order_data_after_shipping_address', 'wc_postnet_delivery_checkout_field_display_admin_order_meta', 10, 1);
+add_action('woocommerce_admin_order_data_after_shipping_address', 'wc_postnet_delivery_display_waybill_status', 20, 1);
 add_action('woocommerce_after_shipping_rate', 'wc_postnet_delivery_checkout_field', 10, 1);
 add_action('woocommerce_checkout_process', 'wc_postnet_delivery_validations');
 add_action('woocommerce_checkout_update_order_meta', 'wc_postnet_delivery_checkout_field_update_order_meta');
@@ -48,6 +49,7 @@ add_action('woocommerce_before_order_object_save', 'wc_postnet_delivery_validate
 add_action('wp_ajax_nopriv_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 add_action('wp_ajax_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 add_action('wp_ajax_validate_google_api_key', 'wc_postnet_validate_google_api_key');
+add_action('wp_ajax_wc_postnet_retry_waybill', 'wc_postnet_delivery_retry_waybill_ajax');
 
 add_filter('woocommerce_package_rates', 'wc_postnet_delivery_custom_shipping_methods_logic', 10, 2);
 
@@ -422,6 +424,52 @@ function wc_postnet_delivery_enqueue_scripts($hook) {
       array(
         'ajax_url' => admin_url('admin-ajax.php'),
         'nonce' => wp_create_nonce('wc_postnet_delivery_admin_nonce')
+      )
+    );
+  }
+  
+  // Enqueue scripts for order edit page
+  // Check multiple ways to detect WooCommerce order edit page
+  $is_order_page = false;
+  
+  // Method 1: Check hook and post type (classic)
+  if (($hook == 'post.php' || $hook == 'post-new.php')) {
+    global $post;
+    if ($post && $post->post_type == 'shop_order') {
+      $is_order_page = true;
+    }
+  }
+  
+  // Method 2: Check screen ID (works with HPOS and classic)
+  if (!$is_order_page) {
+    $screen = get_current_screen();
+    if ($screen && ($screen->id == 'shop_order' || $screen->id == 'woocommerce_page_wc-orders')) {
+      $is_order_page = true;
+    }
+  }
+  
+  // Method 3: Check if we're in admin and have order ID in request
+  if (!$is_order_page && is_admin()) {
+    $order_id = isset($_GET['post']) ? intval($_GET['post']) : (isset($_GET['id']) ? intval($_GET['id']) : 0);
+    if ($order_id > 0) {
+      $order = wc_get_order($order_id);
+      if ($order) {
+        $is_order_page = true;
+      }
+    }
+  }
+  
+  if ($is_order_page) {
+    wp_enqueue_script('wc-postnet-delivery-admin-order-js', plugin_dir_url(__FILE__) . 'js/wc-postnet-delivery-admin-order.js', array('jquery'), '1.0.0', true);
+    
+    wp_localize_script(
+      'wc-postnet-delivery-admin-order-js',
+      'wc_postnet_delivery_order_params',
+      array(
+        'ajax_url' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('wc_postnet_delivery_order_nonce'),
+        'error_label' => __('Error:', 'delivery-options-postnet-woocommerce'),
+        'ajax_error' => __('An error occurred while processing your request.', 'delivery-options-postnet-woocommerce')
       )
     );
   }
@@ -1088,6 +1136,233 @@ function wc_postnet_delivery_order_received_page($order) {
     if (!empty($collection_error)) {
       echo '<p><strong>' . esc_html__('Collection Error', 'delivery-options-postnet-woocommerce') . ':</strong> ' . esc_html($collection_error) . '</p>';
     }
+  }
+}
+
+/**
+ * Display waybill creation status and retry button on admin order screen
+ */
+function wc_postnet_delivery_display_waybill_status($order) {
+  if (!$order) {
+    return;
+  }
+  
+  $order_id = $order->get_id();
+  
+  // Check if this is a PostNet delivery order
+  $shipping_items = $order->get_items('shipping');
+  if (empty($shipping_items)) {
+    return;
+  }
+  
+  $shipping_item = reset($shipping_items);
+  $chosen_method = $shipping_item->get_method_id() . ':' . $shipping_item->get_instance_id();
+  $postnet_internal_id = wc_postnet_delivery_get_postnet_internal_id_for_rate($chosen_method);
+  
+  // Only show for PostNet delivery methods
+  if (!$postnet_internal_id || !in_array($postnet_internal_id, array(POSTNET_METHOD_ID_FREE, POSTNET_METHOD_ID_STORE, POSTNET_METHOD_ID_EXPRESS, POSTNET_METHOD_ID_ECONOMY))) {
+    return;
+  }
+  
+  $waybill_number = get_post_meta($order_id, 'Waybill Number', true);
+  $creation_status = get_post_meta($order_id, '_waybill_creation_status', true);
+  $creation_error = get_post_meta($order_id, '_waybill_creation_error', true);
+  $creation_attempted = get_post_meta($order_id, '_waybill_creation_attempted', true);
+  
+  // Only show if waybill doesn't exist
+  if (empty($waybill_number)) {
+    echo '<div class="postnet-waybill-status" style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-left: 4px solid #dc3232;">';
+    echo '<h3>' . esc_html__('PostNet Waybill Status', 'delivery-options-postnet-woocommerce') . '</h3>';
+    
+    if ($creation_status === 'failed') {
+      echo '<p><strong>' . esc_html__('Status:', 'delivery-options-postnet-woocommerce') . '</strong> <span style="color: #dc3232;">' . esc_html__('Failed', 'delivery-options-postnet-woocommerce') . '</span></p>';
+      
+      if (!empty($creation_error)) {
+        echo '<p><strong>' . esc_html__('Error:', 'delivery-options-postnet-woocommerce') . '</strong> <span style="color: #dc3232;">' . esc_html($creation_error) . '</span></p>';
+      }
+      
+      if (!empty($creation_attempted)) {
+        echo '<p><strong>' . esc_html__('Last Attempt:', 'delivery-options-postnet-woocommerce') . '</strong> ' . esc_html($creation_attempted) . '</p>';
+      }
+      
+      echo '<button type="button" class="button button-primary postnet-retry-waybill" data-order-id="' . esc_attr($order_id) . '" style="margin-top: 10px;">' . esc_html__('Retry Waybill Creation', 'delivery-options-postnet-woocommerce') . '</button>';
+      echo '<span class="postnet-retry-spinner spinner" style="float: none; margin-left: 10px; visibility: hidden;"></span>';
+    } elseif (!empty($creation_attempted)) {
+      echo '<p><strong>' . esc_html__('Status:', 'delivery-options-postnet-woocommerce') . '</strong> <span style="color: #f56e28;">' . esc_html__('Attempted', 'delivery-options-postnet-woocommerce') . '</span></p>';
+      echo '<p><strong>' . esc_html__('Last Attempt:', 'delivery-options-postnet-woocommerce') . '</strong> ' . esc_html($creation_attempted) . '</p>';
+      
+      if (!empty($creation_error)) {
+        echo '<p><strong>' . esc_html__('Error:', 'delivery-options-postnet-woocommerce') . '</strong> <span style="color: #dc3232;">' . esc_html($creation_error) . '</span></p>';
+      }
+      
+      echo '<button type="button" class="button button-primary postnet-retry-waybill" data-order-id="' . esc_attr($order_id) . '" style="margin-top: 10px;">' . esc_html__('Retry Waybill Creation', 'delivery-options-postnet-woocommerce') . '</button>';
+      echo '<span class="postnet-retry-spinner spinner" style="float: none; margin-left: 10px; visibility: hidden;"></span>';
+    } else {
+      // No waybill exists and no attempt recorded - show retry button
+      echo '<p><strong>' . esc_html__('Status:', 'delivery-options-postnet-woocommerce') . '</strong> <span style="color: #f56e28;">' . esc_html__('No waybill created', 'delivery-options-postnet-woocommerce') . '</span></p>';
+      echo '<button type="button" class="button button-primary postnet-retry-waybill" data-order-id="' . esc_attr($order_id) . '" style="margin-top: 10px;">' . esc_html__('Create Waybill', 'delivery-options-postnet-woocommerce') . '</button>';
+      echo '<span class="postnet-retry-spinner spinner" style="float: none; margin-left: 10px; visibility: hidden;"></span>';
+    }
+    
+    echo '<div class="postnet-retry-message" style="margin-top: 10px; display: none;"></div>';
+    echo '</div>';
+    
+    // Enqueue script inline to ensure it loads
+    wp_enqueue_script('jquery');
+    
+    // Output inline script with localized data
+    $ajax_url = admin_url('admin-ajax.php');
+    $nonce = wp_create_nonce('wc_postnet_delivery_order_nonce');
+    $error_label = __('Error:', 'delivery-options-postnet-woocommerce');
+    $ajax_error = __('An error occurred while processing your request.', 'delivery-options-postnet-woocommerce');
+    
+    echo '<script type="text/javascript">';
+    echo 'jQuery(document).ready(function($) {';
+    echo '  if (typeof wc_postnet_delivery_order_params === "undefined") {';
+    echo '    window.wc_postnet_delivery_order_params = {';
+    echo '      ajax_url: "' . esc_js($ajax_url) . '",';
+    echo '      nonce: "' . esc_js($nonce) . '",';
+    echo '      error_label: "' . esc_js($error_label) . '",';
+    echo '      ajax_error: "' . esc_js($ajax_error) . '"';
+    echo '    };';
+    echo '  }';
+    echo '  ';
+    echo '  // Handle retry waybill creation button click';
+    echo '  $(document).on("click", ".postnet-retry-waybill", function(e) {';
+    echo '    e.preventDefault();';
+    echo '    ';
+    echo '    var $button = $(this);';
+    echo '    var $spinner = $button.siblings(".postnet-retry-spinner");';
+    echo '    var $message = $button.siblings(".postnet-retry-message");';
+    echo '    var orderId = $button.data("order-id");';
+    echo '    ';
+    echo '    // Disable button and show spinner';
+    echo '    $button.prop("disabled", true);';
+    echo '    $spinner.css("visibility", "visible");';
+    echo '    $message.hide().removeClass("notice-success notice-error");';
+    echo '    ';
+    echo '    // Make AJAX request';
+    echo '    $.ajax({';
+    echo '      url: wc_postnet_delivery_order_params.ajax_url,';
+    echo '      type: "POST",';
+    echo '      data: {';
+    echo '        action: "wc_postnet_retry_waybill",';
+    echo '        nonce: wc_postnet_delivery_order_params.nonce,';
+    echo '        order_id: orderId';
+    echo '      },';
+    echo '      success: function(response) {';
+    echo '        $spinner.css("visibility", "hidden");';
+    echo '        ';
+    echo '        if (response.success) {';
+    echo '          // Show success message';
+    echo '          $message';
+    echo '            .addClass("notice notice-success is-dismissible")';
+    echo '            .html("<p>" + response.data.message + "</p>")';
+    echo '            .show();';
+    echo '          ';
+    echo '          // Reload page after 2 seconds to show updated waybill info';
+    echo '          setTimeout(function() {';
+    echo '            location.reload();';
+    echo '          }, 2000);';
+    echo '        } else {';
+    echo '          // Show error message';
+    echo '          $message';
+    echo '            .addClass("notice notice-error is-dismissible")';
+    echo '            .html("<p><strong>" + wc_postnet_delivery_order_params.error_label + "</strong> " + response.data.message + "</p>")';
+    echo '            .show();';
+    echo '          ';
+    echo '          // Re-enable button';
+    echo '          $button.prop("disabled", false);';
+    echo '        }';
+    echo '      },';
+    echo '      error: function(xhr, status, error) {';
+    echo '        $spinner.css("visibility", "hidden");';
+    echo '        $message';
+    echo '          .addClass("notice notice-error is-dismissible")';
+    echo '          .html("<p><strong>" + wc_postnet_delivery_order_params.error_label + "</strong> " + wc_postnet_delivery_order_params.ajax_error + "</p>")';
+    echo '          .show();';
+    echo '        ';
+    echo '        // Re-enable button';
+    echo '        $button.prop("disabled", false);';
+    echo '      }';
+    echo '    });';
+    echo '  });';
+    echo '});';
+    echo '</script>';
+  }
+}
+
+/**
+ * AJAX handler for retrying waybill creation
+ */
+function wc_postnet_delivery_retry_waybill_ajax() {
+  // Verify nonce
+  check_ajax_referer('wc_postnet_delivery_order_nonce', 'nonce');
+  
+  // Check permissions
+  if (!current_user_can('edit_shop_orders')) {
+    wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'delivery-options-postnet-woocommerce')));
+    return;
+  }
+  
+  $order_id = isset($_POST['order_id']) ? intval($_POST['order_id']) : 0;
+  
+  if (!$order_id) {
+    wp_send_json_error(array('message' => __('Invalid order ID.', 'delivery-options-postnet-woocommerce')));
+    return;
+  }
+  
+  $order = wc_get_order($order_id);
+  if (!$order) {
+    wp_send_json_error(array('message' => __('Order not found.', 'delivery-options-postnet-woocommerce')));
+    return;
+  }
+  
+  // Check if waybill already exists
+  $existing_waybill = get_post_meta($order_id, 'Waybill Number', true);
+  if (!empty($existing_waybill)) {
+    wp_send_json_error(array('message' => __('Waybill already exists for this order.', 'delivery-options-postnet-woocommerce')));
+    return;
+  }
+  
+  // Get options
+  $options = get_option('wc_postnet_delivery_options');
+  if (!$options) {
+    wp_send_json_error(array('message' => __('PostNet plugin is not configured.', 'delivery-options-postnet-woocommerce')));
+    return;
+  }
+  
+  // Determine if we need collection address (Multi Site Mode)
+  $collection_address = null;
+  if (isset($options['multi_site_mode']) && $options['multi_site_mode']) {
+    $collection_address_index = get_post_meta($order_id, '_collection_address_index', true);
+    if ($collection_address_index !== '') {
+      $collection_addresses = isset($options['collection_addresses']) ? $options['collection_addresses'] : array();
+      if (isset($collection_addresses[$collection_address_index])) {
+        $collection_address = $collection_addresses[$collection_address_index];
+      }
+    }
+    
+    // In Multi Site Mode, collection address is required
+    if (!$collection_address) {
+      wp_send_json_error(array('message' => __('Collection address must be selected before creating waybill in Multi Site Mode.', 'delivery-options-postnet-woocommerce')));
+      return;
+    }
+  }
+  
+  // Attempt to create waybill
+  $success = wc_postnet_delivery_create_waybill($order, $collection_address);
+  
+  if ($success) {
+    $waybill_number = get_post_meta($order_id, 'Waybill Number', true);
+    wp_send_json_success(array(
+      'message' => __('Waybill created successfully.', 'delivery-options-postnet-woocommerce'),
+      'waybill_number' => $waybill_number
+    ));
+  } else {
+    $error = get_post_meta($order_id, '_waybill_creation_error', true);
+    $error_message = !empty($error) ? $error : __('Failed to create waybill. Please check the error logs.', 'delivery-options-postnet-woocommerce');
+    wp_send_json_error(array('message' => $error_message));
   }
 }
 
@@ -2002,18 +2277,32 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
   ]);
   
   // Handle the response
+  $order_id = $order->get_id();
+  
+  // Store attempt timestamp
+  update_post_meta($order_id, '_waybill_creation_attempted', current_time('mysql'));
+  
   if (is_wp_error($response)) {
-    error_log('Error in API request: ' . $response->get_error_message());
+    $error_message = $response->get_error_message();
+    error_log('Error in API request: ' . $error_message);
+    
+    // Store error information
+    update_post_meta($order_id, '_waybill_creation_status', 'failed');
+    update_post_meta($order_id, '_waybill_creation_error', sanitize_text_field($error_message));
+    
     return false;
   } else {
     $response_body = wp_remote_retrieve_body($response);
     $response = json_decode($response_body);
     
     if (isset($response->success) && $response->success) {
-      $order_id = $order->get_id();
       update_post_meta($order_id, 'Waybill Number', sanitize_text_field($response->waybill_number));
       update_post_meta($order_id, 'Tracking URL', sanitize_text_field($response->tracking_url));
       update_post_meta($order_id, 'Label Print', sanitize_text_field($response->label_print));
+      
+      // Clear error status on success
+      update_post_meta($order_id, '_waybill_creation_status', 'success');
+      delete_post_meta($order_id, '_waybill_creation_error');
       
       // Handle collection response fields if create_collection was true
       if ($collection_address) {
@@ -2049,14 +2338,37 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
       
       return true;
     } else {
+      // Extract error message from response
+      $error_message = '';
+      if (isset($response->error)) {
+        $error_message = is_string($response->error) ? $response->error : wp_json_encode($response->error);
+      } elseif (isset($response->message)) {
+        $error_message = is_string($response->message) ? $response->message : wp_json_encode($response->message);
+      } else {
+        $error_message = __('Unknown error occurred', 'delivery-options-postnet-woocommerce');
+      }
+      
       error_log('API Response: ' . $response_body);
+      
+      // Store error information
+      update_post_meta($order_id, '_waybill_creation_status', 'failed');
+      update_post_meta($order_id, '_waybill_creation_error', sanitize_text_field($error_message));
+      
       return false;
     }
   }
   
   } catch (Exception $e) {
-    error_log('PostNet: Exception in wc_postnet_delivery_create_waybill: ' . $e->getMessage());
+    $order_id = $order->get_id();
+    $error_message = $e->getMessage();
+    
+    error_log('PostNet: Exception in wc_postnet_delivery_create_waybill: ' . $error_message);
     error_log('PostNet: Stack trace: ' . $e->getTraceAsString());
+    
+    // Store error information
+    update_post_meta($order_id, '_waybill_creation_status', 'failed');
+    update_post_meta($order_id, '_waybill_creation_error', sanitize_text_field($error_message));
+    
     return false;
   }
 }
