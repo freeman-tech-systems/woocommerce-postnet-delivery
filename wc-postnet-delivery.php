@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
  * Plugin Name: Delivery Options For PostNet
  * Plugin URI: https://github.com/freeman-tech-systems/woocommerce-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
- * Version: 1.0.12
+ * Version: 1.0.13
  * Author: Freeman Tech Systems
  * Author URI: https://github.com/freeman-tech-systems
  * License: GPL2
@@ -326,7 +326,7 @@ function wc_postnet_delivery_options_page() {
                 <tr>
                   <th scope="row"><label for="sender_street_address_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Street Address', 'delivery-options-postnet-woocommerce'); ?></label></th>
                   <td>
-                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_street_address]" id="sender_street_address_<?php echo esc_attr($index); ?>" style="width:400px;" value="<?php echo esc_attr($address['sender_street_address']); ?>" required />
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_street_address]" id="sender_street_address_<?php echo esc_attr($index); ?>" style="width:400px;" value="<?php echo esc_attr($address['sender_street_address']); ?>" <?php echo (isset($options['multi_site_mode']) && $options['multi_site_mode']) ? 'required' : ''; ?> />
                   </td>
                 </tr>
                 <tr>
@@ -339,7 +339,7 @@ function wc_postnet_delivery_options_page() {
                 <tr>
                   <th scope="row"><label for="sender_country_code_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Country Code', 'delivery-options-postnet-woocommerce'); ?></label></th>
                   <td>
-                    <select name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_country_code]" id="sender_country_code_<?php echo esc_attr($index); ?>" required>
+                    <select name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_country_code]" id="sender_country_code_<?php echo esc_attr($index); ?>" <?php echo (isset($options['multi_site_mode']) && $options['multi_site_mode']) ? 'required' : ''; ?>>
                       <option value="ZA" <?php selected($address['sender_country_code'], 'ZA'); ?>><?php echo esc_html__('South Africa', 'delivery-options-postnet-woocommerce'); ?></option>
                       <option value="BW" <?php selected($address['sender_country_code'], 'BW'); ?>><?php echo esc_html__('Botswana', 'delivery-options-postnet-woocommerce'); ?></option>
                       <option value="LS" <?php selected($address['sender_country_code'], 'LS'); ?>><?php echo esc_html__('Lesotho', 'delivery-options-postnet-woocommerce'); ?></option>
@@ -351,31 +351,31 @@ function wc_postnet_delivery_options_page() {
                 <tr>
                   <th scope="row"><label for="sender_suburb_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Suburb/City', 'delivery-options-postnet-woocommerce'); ?></label></th>
                   <td>
-                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_suburb]" id="sender_suburb_<?php echo esc_attr($index); ?>" style="width:300px;" value="<?php echo esc_attr($address['sender_suburb']); ?>" required />
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_suburb]" id="sender_suburb_<?php echo esc_attr($index); ?>" style="width:300px;" value="<?php echo esc_attr($address['sender_suburb']); ?>" <?php echo (isset($options['multi_site_mode']) && $options['multi_site_mode']) ? 'required' : ''; ?> />
                   </td>
                 </tr>
                 <tr>
                   <th scope="row"><label for="sender_postal_code_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Postal Code', 'delivery-options-postnet-woocommerce'); ?></label></th>
                   <td>
-                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_postal_code]" id="sender_postal_code_<?php echo esc_attr($index); ?>" style="width:150px;" value="<?php echo esc_attr($address['sender_postal_code']); ?>" required />
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_postal_code]" id="sender_postal_code_<?php echo esc_attr($index); ?>" style="width:150px;" value="<?php echo esc_attr($address['sender_postal_code']); ?>" <?php echo (isset($options['multi_site_mode']) && $options['multi_site_mode']) ? 'required' : ''; ?> />
                   </td>
                 </tr>
                 <tr>
                   <th scope="row"><label for="sender_name_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Company/Business Name', 'delivery-options-postnet-woocommerce'); ?></label></th>
                   <td>
-                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_name]" id="sender_name_<?php echo esc_attr($index); ?>" style="width:400px;" value="<?php echo esc_attr($address['sender_name']); ?>" required />
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_name]" id="sender_name_<?php echo esc_attr($index); ?>" style="width:400px;" value="<?php echo esc_attr($address['sender_name']); ?>" <?php echo (isset($options['multi_site_mode']) && $options['multi_site_mode']) ? 'required' : ''; ?> />
                   </td>
                 </tr>
                 <tr>
                   <th scope="row"><label for="sender_contact_number_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Contact Number', 'delivery-options-postnet-woocommerce'); ?></label></th>
                   <td>
-                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_contact_number]" id="sender_contact_number_<?php echo esc_attr($index); ?>" style="width:200px;" value="<?php echo esc_attr($address['sender_contact_number']); ?>" required />
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_contact_number]" id="sender_contact_number_<?php echo esc_attr($index); ?>" style="width:200px;" value="<?php echo esc_attr($address['sender_contact_number']); ?>" <?php echo (isset($options['multi_site_mode']) && $options['multi_site_mode']) ? 'required' : ''; ?> />
                   </td>
                 </tr>
                 <tr>
                   <th scope="row"><label for="sender_contact_person_<?php echo esc_attr($index); ?>"><?php echo esc_html__('Contact Person', 'delivery-options-postnet-woocommerce'); ?></label></th>
                   <td>
-                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_contact_person]" id="sender_postal_code_<?php echo esc_attr($index); ?>" style="width:300px;" value="<?php echo esc_attr($address['sender_contact_person']); ?>" required />
+                    <input type="text" name="wc_postnet_delivery_options[collection_addresses][<?php echo esc_attr($index); ?>][sender_contact_person]" id="sender_postal_code_<?php echo esc_attr($index); ?>" style="width:300px;" value="<?php echo esc_attr($address['sender_contact_person']); ?>" <?php echo (isset($options['multi_site_mode']) && $options['multi_site_mode']) ? 'required' : ''; ?> />
                   </td>
                 </tr>
               </table>
@@ -1529,10 +1529,20 @@ function wc_postnet_delivery_sanitize_options($input) {
     : 'single';
 
   // Sanitize collection_addresses
-  if (isset($input['collection_addresses']) && is_array($input['collection_addresses'])) {
-    $sanitized['collection_addresses'] = array_map(function($address) {
-      return array_map('sanitize_text_field', $address);
-    }, $input['collection_addresses']);
+  if ($sanitized['multi_site_mode'] && isset($input['collection_addresses']) && is_array($input['collection_addresses'])) {
+    $sanitized['collection_addresses'] = array_values(array_filter(
+      array_map(function($address) {
+        return array_map('sanitize_text_field', $address);
+      }, $input['collection_addresses']),
+      function($address) {
+        // Filter out empty addresses (all fields blank except country code which has a default)
+        return !empty($address['sender_street_address']) || !empty($address['sender_suburb']) || !empty($address['sender_postal_code']) || !empty($address['sender_name']);
+      }
+    ));
+  } else if (!$sanitized['multi_site_mode']) {
+    // When multi-site mode is off, preserve any existing collection addresses but don't save empty ones
+    $existing_options = get_option('wc_postnet_delivery_options', array());
+    $sanitized['collection_addresses'] = isset($existing_options['collection_addresses']) ? $existing_options['collection_addresses'] : array();
   } else {
     $sanitized['collection_addresses'] = array();
   }

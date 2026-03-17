@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.7.2
 Requires PHP: 7.4
-Stable tag: 1.0.12
+Stable tag: 1.0.13
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -84,6 +84,11 @@ When Multi Site Mode is enabled:
 * The selected collection address will be used as the originating address on the waybill
 
 == Changelog ==
+= 1.0.13 =
+* Fixed settings not saving when Multi Site Mode collection address fields are empty but Multi Site Mode is not enabled
+* Collection address fields are no longer marked as required when Multi Site Mode is disabled
+* Empty placeholder addresses are filtered out when saving with Multi Site Mode enabled
+
 = 1.0.12 =
 * Fixed waybill creation failures on WooCommerce order processing
 * Added waybill status display and retry button on admin order screen

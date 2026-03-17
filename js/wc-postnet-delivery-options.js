@@ -14,8 +14,17 @@
     $('input[name="wc_postnet_delivery_options[multi_site_mode]"]').on('change', function() {
       if ($(this).is(':checked')) {
         $('#collection-addresses-section').show();
+        // Add required back to collection address fields
+        $('#collection-addresses-section').find('input[type="text"], select').each(function() {
+          // Don't add required to the optional "Additional Address Info" field
+          if ($(this).attr('name') && $(this).attr('name').indexOf('[sender_other_address]') === -1) {
+            $(this).attr('required', 'required');
+          }
+        });
       } else {
         $('#collection-addresses-section').hide();
+        // Remove required from all collection address fields so the form can be saved
+        $('#collection-addresses-section').find('input[type="text"], select').removeAttr('required');
       }
     });
     
