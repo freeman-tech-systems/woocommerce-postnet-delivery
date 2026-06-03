@@ -38,14 +38,10 @@ add_action('woocommerce_after_shipping_rate', 'wc_postnet_delivery_checkout_fiel
 add_action('woocommerce_checkout_process', 'wc_postnet_delivery_validations');
 add_action('woocommerce_checkout_update_order_meta', 'wc_postnet_delivery_checkout_field_update_order_meta');
 add_action('woocommerce_order_details_after_order_table', 'wc_postnet_delivery_order_received_page');
-add_action('woocommerce_thankyou', 'wc_postnet_delivery_collection_notification', 10, 1);
-add_action('woocommerce_order_status_completed', 'wc_postnet_delivery_create_waybill_on_completion', 10, 1);
 add_action('woocommerce_admin_order_data_after_billing_address', 'wc_postnet_delivery_admin_collection_address_field', 10, 1);
 add_action('woocommerce_process_shop_order_meta', 'wc_postnet_delivery_save_admin_collection_address_field', 10, 2);
-add_action('woocommerce_before_order_object_save', 'wc_postnet_delivery_validate_collection_address_before_completion', 10, 2);
 add_action('woocommerce_admin_order_data_after_billing_address', 'wc_postnet_delivery_admin_number_of_boxes_field', 10, 1);
 add_action('woocommerce_process_shop_order_meta', 'wc_postnet_delivery_save_admin_number_of_boxes_field', 10, 2);
-add_action('woocommerce_before_order_object_save', 'wc_postnet_delivery_validate_number_of_boxes_before_completion', 10, 2);
 add_action('wp_ajax_nopriv_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 add_action('wp_ajax_wc_postnet_delivery_stores', 'wc_postnet_delivery_stores');
 add_action('wp_ajax_validate_google_api_key', 'wc_postnet_validate_google_api_key');
@@ -155,7 +151,7 @@ function wc_postnet_delivery_options_page() {
     $options = [
       'service_type' => [],
       'collection_type' => 'always_collect',
-      'waybill_option' => 'single'
+      'rate_mode' => 'fixed'
     ];
   }
   
@@ -1229,90 +1225,6 @@ function wc_postnet_delivery_retry_waybill_ajax() {
 }
 
 /**
- * Create waybill when order is placed (standard mode)
- * Now uses the unified waybill creation method
- */
-function wc_postnet_delivery_collection_notification($order_id){
-  if (!$order_id) {
-    error_log('PostNet: No order ID provided, returning early');
-    return;
-  }
-  
-  // Get an instance of the WC_Order object
-  $order = wc_get_order($order_id);
-  if (!$order) {
-    error_log('PostNet: Could not get order object for ID: ' . $order_id);
-    return;
-  }
-  
-  // Get delivery options
-  $options = get_option('wc_postnet_delivery_options');
-  
-  // Skip waybill creation if Multi Site Mode is enabled
-  if (isset($options['multi_site_mode']) && $options['multi_site_mode']) {
-    error_log('PostNet: Multi Site Mode enabled, skipping automatic waybill creation for order ' . $order_id);
-    return;
-  }
-  
-  $postal_code = $order->get_shipping_postcode();
-  
-  $main_check = $postal_code ? json_decode(wc_postnet_fetch_url('https://pnsa.restapis.co.za/public/is-main?postcode='.$postal_code)) : null;
-  $is_main = $main_check ? $main_check->main : false;
-  
-  $chosen_methods = WC()->session->get( 'chosen_shipping_methods' );
-  $chosen_method = ! empty( $chosen_methods ) ? $chosen_methods[0] : '';
-  
-  // If no chosen method in session, try to get it from the order
-  if (empty($chosen_method)) {
-    // Try to get from order meta first
-    $chosen_method = $order->get_meta('_chosen_shipping_method');
-    if (empty($chosen_method)) {
-      // If not in meta, try to get from shipping items
-      $shipping_items = $order->get_items('shipping');
-      if (!empty($shipping_items)) {
-        $shipping_item = reset($shipping_items);
-        $chosen_method = $shipping_item->get_method_id() . ':' . $shipping_item->get_instance_id();
-      }
-    }
-  }
-  
-  if (empty($chosen_method)) {
-    error_log('PostNet: No shipping method found in order or session, returning early');
-    return;
-  }
-  
-  error_log('PostNet: Using shipping method: ' . $chosen_method);
-  
-  $rate = null;
-  $zone = wc_postnet_delivery_get_zone();
-  $shipping_methods = $zone->get_shipping_methods();
-  foreach ($shipping_methods as $method) {
-    // Check if method instance ID matches the chosen method ID
-    if ($method->id . ':' . $method->instance_id == $chosen_method) {
-      $rate = $method;
-    }
-  }
-  
-  if (!$rate) return;
-
-  $postnet_internal_id = wc_postnet_delivery_get_postnet_internal_id_for_rate($chosen_method);
-  if ($postnet_internal_id !== POSTNET_METHOD_ID_STORE) {
-    delete_post_meta($order_id, 'Destination Store');
-    error_log('PostNet: Unsetting destination store as shipping method is not PostNet to PostNet');
-    return;
-  }
-  
-  // Create waybill using the unified method (no collection address for old method)
-  $success = wc_postnet_delivery_create_waybill($order);
-  
-  if ($success) {
-    error_log('PostNet: Waybill created successfully for order ' . $order_id . ' using standard method.');
-  } else {
-    error_log('PostNet: Failed to create waybill for order ' . $order_id . ' using standard method.');
-  }
-}
-
-/**
  * Sanitize the plugin options
  *
  * @param array $input The raw input array
@@ -1826,166 +1738,30 @@ function wc_postnet_delivery_save_admin_collection_address_field($order_id, $pos
  * Add number of boxes field to admin order page
  */
 function wc_postnet_delivery_admin_number_of_boxes_field($order) {
-  $options = get_option('wc_postnet_delivery_options');
-  
-  // Only show if waybill_option is 'user_specified'
-  if (!isset($options['waybill_option']) || $options['waybill_option'] !== 'user_specified') {
-    return;
-  }
-  
+  // Always available. The box count is used only for waybill creation and never affects the rate.
   $number_of_boxes = get_post_meta($order->get_id(), '_number_of_boxes', true);
-  $order_status = $order->get_status();
-  
-  // Check if number_of_boxes was recently updated (within last 5 minutes)
-  $boxes_updated = get_post_meta($order->get_id(), '_number_of_boxes_updated', true);
-  $recently_updated = false;
-  if ($boxes_updated) {
-    $update_time = strtotime($boxes_updated);
-    $current_time = current_time('timestamp');
-    $recently_updated = ($current_time - $update_time) < 300; // 5 minutes
+  if ($number_of_boxes === '' || $number_of_boxes === null) {
+    $number_of_boxes = 1;
   }
-  
-  // Also check if this is a form submission that just saved the number
-  $just_saved = isset($_POST['number_of_boxes']) && !empty($_POST['number_of_boxes']);
-  
-  // Check session flag for recently saved number
-  $session_saved = false;
-  if (!session_id()) {
-    session_start();
-  }
-  if (isset($_SESSION['postnet_boxes_saved_' . $order->get_id()])) {
-    $session_saved = true;
-    // Clear the session flag after using it
-    unset($_SESSION['postnet_boxes_saved_' . $order->get_id()]);
-  }
-  
-  // Determine CSS classes based on selection and order status
-  $css_classes = 'number-of-boxes';
-  if ($number_of_boxes === '' || $number_of_boxes === null || $number_of_boxes === '0') {
-    $css_classes .= ' number-of-boxes-required';
-  } else {
-    $css_classes .= ' number-of-boxes-success';
-  }
-  
-  echo '<div class="' . esc_attr($css_classes) . '">';
+
+  echo '<div class="number-of-boxes">';
   echo '<h3>' . esc_html__('Number of Boxes', 'delivery-options-postnet-woocommerce') . '</h3>';
-  
-  // Show warning ONLY if no number is set AND order is completed AND no recent updates
-  if (($number_of_boxes === '' || $number_of_boxes === null || $number_of_boxes === '0') && $order_status === 'completed' && !$recently_updated && !$just_saved && !$session_saved) {
-    echo '<div class="number-of-boxes-warning" id="number-of-boxes-warning">';
-    echo esc_html__('Warning: This order is marked as completed but no number of boxes is specified. Waybill creation will fail.', 'delivery-options-postnet-woocommerce');
-    echo '</div>';
-  }
-  
-  // Show success message if number is set (regardless of order status)
-  if ($number_of_boxes !== '' && $number_of_boxes !== null && $number_of_boxes !== '0') {
-    echo '<div class="number-of-boxes-success" id="number-of-boxes-success">';
-    echo esc_html__('Number of boxes specified. Order can be completed and waybill will be created.', 'delivery-options-postnet-woocommerce');
-    echo '</div>';
-  }
-  
-  echo '<input type="number" name="number_of_boxes" id="number_of_boxes" min="1" step="1" value="' . esc_attr($number_of_boxes) . '" required />';
-  
-  // Add hidden field to track if number was just saved
-  if ($just_saved || $session_saved) {
-    echo '<input type="hidden" id="boxes-just-saved" value="1" />';
-  }
-  
-  if ($number_of_boxes === '' || $number_of_boxes === null || $number_of_boxes === '0') {
-    echo '<p class="description">' . esc_html__('⚠️ REQUIRED: Enter the number of boxes for this order. Waybill creation requires this value when User Specified option is selected.', 'delivery-options-postnet-woocommerce') . '</p>';
-  } else {
-    echo '<p class="description">' . esc_html__('✅ Number of boxes specified. Order can now be completed.', 'delivery-options-postnet-woocommerce') . '</p>';
-  }
-  
+  echo '<input type="number" name="number_of_boxes" id="number_of_boxes" min="1" step="1" value="' . esc_attr($number_of_boxes) . '" />';
+  echo '<p class="description">' . esc_html__('Number of boxes for this shipment (used on the waybill only; does not affect the shipping rate).', 'delivery-options-postnet-woocommerce') . '</p>';
   echo '</div>';
-  
-  // Add JavaScript to refresh indicators if this is a completed order with a number
-  if ($order_status === 'completed' && ($number_of_boxes !== '' && $number_of_boxes !== null && $number_of_boxes !== '0')) {
-    echo '<script type="text/javascript">
-      jQuery(document).ready(function($) {
-        setTimeout(function() {
-          if (typeof refreshNumberOfBoxesIndicators === "function") {
-            refreshNumberOfBoxesIndicators();
-          }
-        }, 200);
-      });
-    </script>';
-  }
-  
-  // Add JavaScript to immediately remove warnings if number was just saved
-  if ($just_saved || $session_saved) {
-    echo '<script type="text/javascript">
-      jQuery(document).ready(function($) {
-        $(".number-of-boxes-warning").remove();
-        $(".number-of-boxes").removeClass("number-of-boxes-required").addClass("number-of-boxes-success");
-      });
-    </script>';
-  }
 }
 
 /**
- * Save number of boxes from admin order page
+ * Save number of boxes from admin order page (defaults to 1)
  */
 function wc_postnet_delivery_save_admin_number_of_boxes_field($order_id, $post) {
   if (isset($_POST['number_of_boxes'])) {
     $number_of_boxes = intval($_POST['number_of_boxes']);
-    if ($number_of_boxes > 0) {
-      update_post_meta($order_id, '_number_of_boxes', $number_of_boxes);
-      
-      // Add a flag to indicate the number of boxes was updated
-      update_post_meta($order_id, '_number_of_boxes_updated', current_time('timestamp'));
-      
-      // Set a session flag to indicate the number was just saved
-      if (!session_id()) {
-        session_start();
-      }
-      $_SESSION['postnet_boxes_saved_' . $order_id] = true;
+    if ($number_of_boxes < 1) {
+      $number_of_boxes = 1;
     }
+    update_post_meta($order_id, '_number_of_boxes', $number_of_boxes);
   }
-}
-
-/**
- * Create waybill when order status is changed to Completed (Multi Site Mode)
- * Uses the unified waybill creation method
- */
-function wc_postnet_delivery_create_waybill_on_completion($order_id) {
-  $options = get_option('wc_postnet_delivery_options');
-  
-  // Only proceed if Multi Site Mode is enabled
-  if (!isset($options['multi_site_mode']) || !$options['multi_site_mode']) {
-    return;
-  }
-  
-  $order = wc_get_order($order_id);
-  if (!$order) {
-    return;
-  }
-  
-  // Check if a collection address has been selected
-  $collection_address_index = get_post_meta($order_id, '_collection_address_index', true);
-  if ($collection_address_index === '') {
-    error_log('PostNet: No collection address selected for order ' . $order_id . '. Waybill creation skipped.');
-    return;
-  }
-  
-  // Get the selected collection address
-  $collection_addresses = isset($options['collection_addresses']) ? $options['collection_addresses'] : array();
-  if (!isset($collection_addresses[$collection_address_index])) {
-    error_log('PostNet: Invalid collection address index ' . $collection_address_index . ' for order ' . $order_id);
-    return;
-  }
-  
-  $selected_address = $collection_addresses[$collection_address_index];
-  
-  // Check if waybill already exists
-  $existing_waybill = get_post_meta($order_id, 'Waybill Number', true);
-  if (!empty($existing_waybill)) {
-    error_log('PostNet: Waybill already exists for order ' . $order_id . '. Skipping creation.');
-    return;
-  }
-  
-  // Create waybill using the selected collection address
-  wc_postnet_delivery_create_waybill_with_collection_address($order, $selected_address);
 }
 
 /**
@@ -2090,7 +1866,7 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
   $data = [
     'online_store_name' => get_bloginfo('name'),
     'collection_type' => $options['collection_type'],
-    'waybill_option' => isset($options['waybill_option']) ? $options['waybill_option'] : 'single',
+    'waybill_option' => 'user_specified',
     'service_type' => $service_type,
     'origin_store' => $options['postnet_store'],
     'destination_store' => $destination_store ? $destination_store[0] : '',
@@ -2105,13 +1881,9 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
     'order_items' => []
   ];
   
-  // Add number_of_boxes if waybill_option is 'user_specified'
-  if (isset($options['waybill_option']) && $options['waybill_option'] === 'user_specified') {
-    $number_of_boxes = get_post_meta($order->get_id(), '_number_of_boxes', true);
-    if ($number_of_boxes && intval($number_of_boxes) > 0) {
-      $data['number_of_boxes'] = intval($number_of_boxes);
-    }
-  }
+  // Number of boxes is always sent (defaults to 1); affects the waybill only, never the rate.
+  $number_of_boxes = get_post_meta($order->get_id(), '_number_of_boxes', true);
+  $data['number_of_boxes'] = ($number_of_boxes && intval($number_of_boxes) > 0) ? intval($number_of_boxes) : 1;
   
   // Add collection address fields if provided (Multi Site Mode)
   if ($collection_address) {
@@ -2258,129 +2030,6 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
     update_post_meta($order_id, '_waybill_creation_error', sanitize_text_field($error_message));
     
     return false;
-  }
-}
-
-/**
- * Create waybill with collection address data (Multi Site Mode)
- */
-function wc_postnet_delivery_create_waybill_with_collection_address($order, $collection_address) {
-  return wc_postnet_delivery_create_waybill($order, $collection_address);
-}
-
-/**
- * Validate collection address selection before allowing order completion
- */
-function wc_postnet_delivery_validate_collection_address_before_completion($order, $data_store) {
-  try {
-    // Validate input parameters
-    if (!$order || !is_object($order)) {
-      error_log('PostNet: Invalid order object in validation function');
-      return;
-    }
-    
-    $options = get_option('wc_postnet_delivery_options');
-    if (!$options) {
-      error_log('PostNet: No plugin options found in validation function');
-      return;
-    }
-    
-    // Only validate if Multi Site Mode is enabled
-    if (!isset($options['multi_site_mode']) || !$options['multi_site_mode']) {
-      return;
-    }
-    
-    // Get the current order status and the new status being set
-    $current_status = $order->get_status();
-    $new_status = $order->get_status();
-    
-    // Check if we're trying to change to 'completed' status
-    if (isset($_POST['order_status']) && $_POST['order_status'] === 'wc-completed') {
-      $new_status = 'completed';
-    }
-    
-    // If the status is being changed to 'completed', validate collection address
-    if ($new_status === 'completed') {
-      $collection_address_index = get_post_meta($order->get_id(), '_collection_address_index', true);
-      
-      if ($collection_address_index === '') {
-        // Prevent the status change and show error
-        wp_die(
-          '<div class="notice notice-error"><p><strong>Error:</strong> Cannot complete order. A collection address must be selected before marking the order as completed in Multi Site Mode.</p></div>',
-          'Collection Address Required',
-          array('back_link' => true)
-        );
-      }
-      
-      // Validate that the selected collection address exists
-      $collection_addresses = isset($options['collection_addresses']) ? $options['collection_addresses'] : array();
-      if (!isset($collection_addresses[$collection_address_index])) {
-        wp_die(
-          '<div class="notice notice-error"><p><strong>Error:</strong> The selected collection address is invalid. Please select a valid collection address before completing the order.</p></div>',
-          'Invalid Collection Address',
-          array('back_link' => true)
-        );
-      }
-    }
-    
-  } catch (Exception $e) {
-    error_log('PostNet: Exception in validation function: ' . $e->getMessage());
-    error_log('PostNet: Stack trace: ' . $e->getTraceAsString());
-    // Don't block the order save if validation fails due to an error
-    return;
-  }
-}
-
-/**
- * Validate number of boxes selection before allowing order completion
- */
-function wc_postnet_delivery_validate_number_of_boxes_before_completion($order, $data_store) {
-  try {
-    // Validate input parameters
-    if (!$order || !is_object($order)) {
-      error_log('PostNet: Invalid order object in number of boxes validation function');
-      return;
-    }
-    
-    $options = get_option('wc_postnet_delivery_options');
-    if (!$options) {
-      error_log('PostNet: No plugin options found in number of boxes validation function');
-      return;
-    }
-    
-    // Only validate if waybill_option is 'user_specified'
-    if (!isset($options['waybill_option']) || $options['waybill_option'] !== 'user_specified') {
-      return;
-    }
-    
-    // Get the current order status and the new status being set
-    $current_status = $order->get_status();
-    $new_status = $order->get_status();
-    
-    // Check if we're trying to change to 'completed' status
-    if (isset($_POST['order_status']) && $_POST['order_status'] === 'wc-completed') {
-      $new_status = 'completed';
-    }
-    
-    // If the status is being changed to 'completed', validate number of boxes
-    if ($new_status === 'completed') {
-      $number_of_boxes = get_post_meta($order->get_id(), '_number_of_boxes', true);
-      
-      if ($number_of_boxes === '' || $number_of_boxes === null || $number_of_boxes === '0' || intval($number_of_boxes) < 1) {
-        // Prevent the status change and show error
-        wp_die(
-          '<div class="notice notice-error"><p><strong>Error:</strong> Cannot complete order. The number of boxes must be specified before marking the order as completed when User Specified waybill option is selected.</p></div>',
-          'Number of Boxes Required',
-          array('back_link' => true)
-        );
-      }
-    }
-    
-  } catch (Exception $e) {
-    error_log('PostNet: Exception in number of boxes validation function: ' . $e->getMessage());
-    error_log('PostNet: Stack trace: ' . $e->getTraceAsString());
-    // Don't block the order save if validation fails due to an error
-    return;
   }
 }
 
