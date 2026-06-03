@@ -573,3 +573,9 @@
   content: '✅ ';
   margin-right: 8px;
 }
+
+/* Variable-rate settings table */
+.postnet-variable-rates-table { max-width: 760px; margin-top: 10px; }
+.postnet-variable-rates-table th, .postnet-variable-rates-table td { padding: 8px 10px; vertical-align: middle; }
+.postnet-variable-rates-table input[type="number"] { width: 120px; }
+#variable-rates-section h2 { margin-top: 24px; }
