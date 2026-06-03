@@ -194,37 +194,47 @@ function wc_postnet_delivery_options_page() {
           </td>
         </tr>
         <tr>
-          <th scope="row"><label for="postnet_to_postnet_fee"><?php echo esc_html__('PostNet to PostNet Delivery Fee', 'delivery-options-postnet-woocommerce'); ?></label></th>
+          <th scope="row"><label for="rate_mode"><?php echo esc_html__('Rate Mode', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
-            <input type="number" name="wc_postnet_delivery_options[postnet_to_postnet_fee]" value="<?php echo esc_attr(isset($options['postnet_to_postnet_fee']) ? $options['postnet_to_postnet_fee'] : ''); ?>" required />
+            <select name="wc_postnet_delivery_options[rate_mode]" id="rate_mode">
+              <option value="fixed" <?php selected(isset($options['rate_mode']) ? $options['rate_mode'] : 'fixed', 'fixed'); ?>><?php echo esc_html__('Fixed Rate', 'delivery-options-postnet-woocommerce'); ?></option>
+              <option value="variable" <?php selected(isset($options['rate_mode']) ? $options['rate_mode'] : 'fixed', 'variable'); ?>><?php echo esc_html__('Variable Rate (weight / volumetric)', 'delivery-options-postnet-woocommerce'); ?></option>
+            </select>
+            <p class="description"><?php echo esc_html__('Fixed: one flat rate per service. Variable: tiered rate from chargeable weight (max of actual vs volumetric, summed).', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
-        <tr>
+        <tr class="postnet-fixed-rates">
+          <th scope="row"><label for="postnet_to_postnet_fee"><?php echo esc_html__('PostNet to PostNet Delivery Fee', 'delivery-options-postnet-woocommerce'); ?></label></th>
+          <td>
+            <input type="number" name="wc_postnet_delivery_options[postnet_to_postnet_fee]" value="<?php echo esc_attr(isset($options['postnet_to_postnet_fee']) ? $options['postnet_to_postnet_fee'] : ''); ?>" step="any" min="0" />
+          </td>
+        </tr>
+        <tr class="postnet-fixed-rates">
           <th scope="row"><label for="regional_centre_express_fee"><?php echo esc_html__('Regional Centre - Express', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
             <input type="number" name="wc_postnet_delivery_options[regional_centre_express_fee]" value="<?php echo esc_attr(isset($options['regional_centre_express_fee']) ? $options['regional_centre_express_fee'] : ''); ?>" step="any" min="0" />
-            <p class="description"><?php echo esc_html__('Flat rate for Regional Centre - Express. Leave blank to use individual product calculations.', 'delivery-options-postnet-woocommerce'); ?></p>
+            <p class="description"><?php echo esc_html__('Flat rate for Regional Centre - Express.', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
-        <tr>
+        <tr class="postnet-fixed-rates">
           <th scope="row"><label for="regional_centre_economy_fee"><?php echo esc_html__('Regional Centre - Economy', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
             <input type="number" name="wc_postnet_delivery_options[regional_centre_economy_fee]" value="<?php echo esc_attr(isset($options['regional_centre_economy_fee']) ? $options['regional_centre_economy_fee'] : ''); ?>" step="any" min="0" />
-            <p class="description"><?php echo esc_html__('Flat rate for Regional Centre - Economy. Leave blank to use individual product calculations.', 'delivery-options-postnet-woocommerce'); ?></p>
+            <p class="description"><?php echo esc_html__('Flat rate for Regional Centre - Economy.', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
-        <tr>
+        <tr class="postnet-fixed-rates">
           <th scope="row"><label for="main_centre_express_fee"><?php echo esc_html__('Main Centre - Express', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
             <input type="number" name="wc_postnet_delivery_options[main_centre_express_fee]" value="<?php echo esc_attr(isset($options['main_centre_express_fee']) ? $options['main_centre_express_fee'] : ''); ?>" step="any" min="0" />
-            <p class="description"><?php echo esc_html__('Flat rate for Main Centre - Express. Leave blank to use individual product calculations.', 'delivery-options-postnet-woocommerce'); ?></p>
+            <p class="description"><?php echo esc_html__('Flat rate for Main Centre - Express.', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
-        <tr>
+        <tr class="postnet-fixed-rates">
           <th scope="row"><label for="main_centre_economy_fee"><?php echo esc_html__('Main Centre - Economy', 'delivery-options-postnet-woocommerce'); ?></label></th>
           <td>
             <input type="number" name="wc_postnet_delivery_options[main_centre_economy_fee]" value="<?php echo esc_attr(isset($options['main_centre_economy_fee']) ? $options['main_centre_economy_fee'] : ''); ?>" step="any" min="0" />
-            <p class="description"><?php echo esc_html__('Flat rate for Main Centre - Economy. Leave blank to use individual product calculations.', 'delivery-options-postnet-woocommerce'); ?></p>
+            <p class="description"><?php echo esc_html__('Flat rate for Main Centre - Economy.', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
         <tr>
@@ -241,17 +251,6 @@ function wc_postnet_delivery_options_page() {
               <option value="always_deliver" <?php selected($options['collection_type'], 'always_deliver'); ?>><?php echo esc_html__('Always Deliver', 'delivery-options-postnet-woocommerce'); ?></option>
               <option value="service_based" <?php selected($options['collection_type'], 'service_based'); ?>><?php echo esc_html__('Service Based', 'delivery-options-postnet-woocommerce'); ?></option>
             </select>
-          </td>
-        </tr>
-        <tr>
-          <th scope="row"><label for="waybill_option"><?php echo esc_html__('Waybill Option', 'delivery-options-postnet-woocommerce'); ?></label></th>
-          <td>
-            <select name="wc_postnet_delivery_options[waybill_option]" id="waybill_option">
-              <option value="single" <?php selected(isset($options['waybill_option']) ? $options['waybill_option'] : 'single', 'single'); ?>><?php echo esc_html__('Single Waybill', 'delivery-options-postnet-woocommerce'); ?></option>
-              <option value="individual" <?php selected(isset($options['waybill_option']) ? $options['waybill_option'] : 'single', 'individual'); ?>><?php echo esc_html__('Individual Waybills', 'delivery-options-postnet-woocommerce'); ?></option>
-              <option value="user_specified" <?php selected(isset($options['waybill_option']) ? $options['waybill_option'] : 'single', 'user_specified'); ?>><?php echo esc_html__('User Specified', 'delivery-options-postnet-woocommerce'); ?></option>
-            </select>
-            <p class="description"><?php echo esc_html__('Choose whether orders are grouped on a single waybill, each item creates its own waybill, or the number of boxes is specified by the user on the order page.', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
         <tr>
@@ -300,7 +299,51 @@ function wc_postnet_delivery_options_page() {
           </td>
         </tr>
       </table>
-      
+
+      <!-- Variable Rates Section -->
+      <div id="variable-rates-section" style="<?php echo (isset($options['rate_mode']) && $options['rate_mode'] === 'variable') ? 'display:block;' : 'display:none;'; ?>">
+        <h2><?php echo esc_html__('Variable Rates', 'delivery-options-postnet-woocommerce'); ?></h2>
+        <table class="form-table">
+          <tr>
+            <th scope="row"><label for="volumetric_divisor"><?php echo esc_html__('Volumetric Divisor', 'delivery-options-postnet-woocommerce'); ?></label></th>
+            <td>
+              <input type="number" step="any" min="1" name="wc_postnet_delivery_options[volumetric_divisor]" id="volumetric_divisor" value="<?php echo esc_attr(isset($options['volumetric_divisor']) ? $options['volumetric_divisor'] : 5000); ?>" />
+              <p class="description"><?php echo esc_html__('Volumetric weight (kg) = (L x W x H in cm) / divisor. Default 5000.', 'delivery-options-postnet-woocommerce'); ?></p>
+            </td>
+          </tr>
+        </table>
+        <table class="widefat striped postnet-variable-rates-table">
+          <thead>
+            <tr>
+              <th><?php echo esc_html__('Service', 'delivery-options-postnet-woocommerce'); ?></th>
+              <th><?php echo esc_html__('Base Rate (R)', 'delivery-options-postnet-woocommerce'); ?></th>
+              <th><?php echo esc_html__('Included up to (kg)', 'delivery-options-postnet-woocommerce'); ?></th>
+              <th><?php echo esc_html__('Per kg thereafter (R)', 'delivery-options-postnet-woocommerce'); ?></th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php
+            $variable_service_types = wc_postnet_delivery_service_types();
+            $variable_default_included = array('postnet_to_postnet' => 5);
+            foreach ($variable_service_types as $service_key => $service_name) {
+              $row = isset($options['variable_rates'][$service_key]) ? $options['variable_rates'][$service_key] : array();
+              $base = isset($row['base']) ? $row['base'] : '';
+              $included = (isset($row['included_kg']) && $row['included_kg'] !== '') ? $row['included_kg'] : (isset($variable_default_included[$service_key]) ? $variable_default_included[$service_key] : 2);
+              $per_kg = isset($row['per_kg']) ? $row['per_kg'] : '';
+              ?>
+              <tr>
+                <td><?php echo esc_html($service_name); ?></td>
+                <td><input type="number" step="any" min="0" name="wc_postnet_delivery_options[variable_rates][<?php echo esc_attr($service_key); ?>][base]" value="<?php echo esc_attr($base); ?>" /></td>
+                <td><input type="number" step="any" min="0" name="wc_postnet_delivery_options[variable_rates][<?php echo esc_attr($service_key); ?>][included_kg]" value="<?php echo esc_attr($included); ?>" /></td>
+                <td><input type="number" step="any" min="0" name="wc_postnet_delivery_options[variable_rates][<?php echo esc_attr($service_key); ?>][per_kg]" value="<?php echo esc_attr($per_kg); ?>" /></td>
+              </tr>
+              <?php
+            }
+            ?>
+          </tbody>
+        </table>
+      </div>
+
       <!-- Collection Addresses Section -->
       <div id="collection-addresses-section" style="<?php echo (isset($options['multi_site_mode']) && $options['multi_site_mode']) ? 'display: block;' : 'display: none;'; ?>">
         <h2><?php echo esc_html__('Collection Addresses', 'delivery-options-postnet-woocommerce'); ?></h2>
@@ -397,16 +440,8 @@ function wc_postnet_delivery_options_page() {
       // Output save settings button
       submit_button(esc_html__('Save Settings', 'delivery-options-postnet-woocommerce'));
       $configure_nonce = wp_create_nonce('configure_shipping_options_nonce');
-      $export_nonce = wp_create_nonce('export_products_nonce');
       ?>
       <a href="<?php echo esc_url(add_query_arg(['action' => 'configure_shipping_options', '_wpnonce' => $configure_nonce])); ?>" class="button"><?php echo esc_html__('Configure PostNet Shipping', 'delivery-options-postnet-woocommerce'); ?></a>
-      <a href="<?php echo esc_url(add_query_arg(['action' => 'export_products', '_wpnonce' => $export_nonce])); ?>" class="button"><?php echo esc_html__('Export Products CSV', 'delivery-options-postnet-woocommerce'); ?></a>
-      <label for="postnet_delivery_csv" class="button"><?php echo esc_html__('Import Products CSV', 'delivery-options-postnet-woocommerce'); ?></label>
-    </form>
-    <form method="post" enctype="multipart/form-data" class="hidden">
-      <?php wp_nonce_field('postnet_delivery_action', 'postnet_delivery_nonce'); ?>
-      <input type='file' name='postnet_delivery_csv' accept='.csv' id="postnet_delivery_csv">
-      <input type='hidden' name='action' value='import_products'>
     </form>
   </div>
   <?php
