@@ -3,13 +3,21 @@
     $('#postnet_store').on('change', function(){
       $('#postnet_store_email').val($(this).find('option:selected').data('email'));
     });
-    
-    $('#postnet_delivery_csv').on('change', function(){
-      if (confirm('Proceed with import?')){
-        $(this).closest('form').submit();
+
+    // Rate Mode toggle: show Fixed rate rows or the Variable rates section
+    function postnetToggleRateMode() {
+      var mode = $('#rate_mode').val();
+      if (mode === 'variable') {
+        $('.postnet-fixed-rates').hide();
+        $('#variable-rates-section').show();
+      } else {
+        $('.postnet-fixed-rates').show();
+        $('#variable-rates-section').hide();
       }
-    });
-    
+    }
+    $('#rate_mode').on('change', postnetToggleRateMode);
+    postnetToggleRateMode();
+
     // Multi Site Mode toggle functionality
     $('input[name="wc_postnet_delivery_options[multi_site_mode]"]').on('change', function() {
       if ($(this).is(':checked')) {
