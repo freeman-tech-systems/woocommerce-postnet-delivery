@@ -24,6 +24,8 @@ const POSTNET_METHOD_ID_STORE = 'postnet_store';
 const POSTNET_METHOD_ID_EXPRESS = 'postnet_express';
 const POSTNET_METHOD_ID_ECONOMY = 'postnet_economy';
 
+require_once plugin_dir_path(__FILE__) . 'includes/rate-calculations.php';
+
 add_action('admin_enqueue_scripts', 'wc_postnet_delivery_enqueue_scripts');
 add_action('admin_init', 'wc_postnet_delivery_admin');
 add_action('admin_init', 'wc_postnet_delivery_settings_init');
@@ -868,7 +870,8 @@ function wc_postnet_delivery_custom_shipping_methods_logic($rates, $package) {
   $postnet_to_postnet_fee = isset($options['postnet_to_postnet_fee']) ? $options['postnet_to_postnet_fee'] : 0;
   $enabled_services = isset($options['service_type']) ? $options['service_type'] : array();
   $free_shipping = $order_amount_threshold > 0 && $subtotal >= $order_amount_threshold;
-  
+  $rate_mode = isset($options['rate_mode']) ? $options['rate_mode'] : 'fixed';
+
   $postnet_rate_free = wc_postnet_delivery_get_postnet_rate_id(POSTNET_METHOD_ID_FREE);
   $postnet_rate_store = wc_postnet_delivery_get_postnet_rate_id(POSTNET_METHOD_ID_STORE);
   $postnet_rate_express = wc_postnet_delivery_get_postnet_rate_id(POSTNET_METHOD_ID_EXPRESS);
@@ -881,7 +884,9 @@ function wc_postnet_delivery_custom_shipping_methods_logic($rates, $package) {
     }
     if ($rate_id === $postnet_rate_store) {
       if (!$free_shipping && in_array('postnet_to_postnet', $enabled_services)){
-        $rate->cost = $postnet_to_postnet_fee;
+        $rate->cost = ($rate_mode === 'variable')
+          ? wc_postnet_delivery_service_rate($package, 'postnet_to_postnet', $options)
+          : floatval($postnet_to_postnet_fee);
       } else {
         unset($rates[$rate_id]);
       }
@@ -889,11 +894,13 @@ function wc_postnet_delivery_custom_shipping_methods_logic($rates, $package) {
     }
     if ($rate_id === $postnet_rate_express) {
       if (!$free_shipping && $is_main && in_array('main_centre_express', $enabled_services)){
-        $flat_rate = isset($options['main_centre_express_fee']) && $options['main_centre_express_fee'] !== '' ? floatval($options['main_centre_express_fee']) : null;
-        $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'main_centre_express');
+        $rate->cost = ($rate_mode === 'variable')
+          ? wc_postnet_delivery_service_rate($package, 'main_centre_express', $options)
+          : (isset($options['main_centre_express_fee']) ? floatval($options['main_centre_express_fee']) : 0);
       } else if (!$free_shipping && !$is_main && in_array('regional_centre_express', $enabled_services)){
-        $flat_rate = isset($options['regional_centre_express_fee']) && $options['regional_centre_express_fee'] !== '' ? floatval($options['regional_centre_express_fee']) : null;
-        $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'regional_centre_express');
+        $rate->cost = ($rate_mode === 'variable')
+          ? wc_postnet_delivery_service_rate($package, 'regional_centre_express', $options)
+          : (isset($options['regional_centre_express_fee']) ? floatval($options['regional_centre_express_fee']) : 0);
       } else {
         unset($rates[$rate_id]);
       }
@@ -901,30 +908,62 @@ function wc_postnet_delivery_custom_shipping_methods_logic($rates, $package) {
     }
     if ($rate_id === $postnet_rate_economy) {
       if (!$free_shipping && $is_main && in_array('main_centre_economy', $enabled_services)){
-        $flat_rate = isset($options['main_centre_economy_fee']) && $options['main_centre_economy_fee'] !== '' ? floatval($options['main_centre_economy_fee']) : null;
-        $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'main_centre_economy');
+        $rate->cost = ($rate_mode === 'variable')
+          ? wc_postnet_delivery_service_rate($package, 'main_centre_economy', $options)
+          : (isset($options['main_centre_economy_fee']) ? floatval($options['main_centre_economy_fee']) : 0);
       } else if (!$free_shipping && !$is_main && in_array('regional_centre_economy', $enabled_services)){
-        $flat_rate = isset($options['regional_centre_economy_fee']) && $options['regional_centre_economy_fee'] !== '' ? floatval($options['regional_centre_economy_fee']) : null;
-        $rate->cost = $flat_rate !== null ? $flat_rate : wc_postnet_delivery_service_fee($package, 'regional_centre_economy');
+        $rate->cost = ($rate_mode === 'variable')
+          ? wc_postnet_delivery_service_rate($package, 'regional_centre_economy', $options)
+          : (isset($options['regional_centre_economy_fee']) ? floatval($options['regional_centre_economy_fee']) : 0);
       } else {
         unset($rates[$rate_id]);
       }
       continue;
     }
   }
-  
+
   return $rates;
 }
 
-function wc_postnet_delivery_service_fee($package, $service) {
-  $fee = 0;
-  
-  foreach ($package['contents'] as $item_id => $values) {
-    $value = get_post_meta($values['product_id'], '_'.$service.'_fee', true);
-    $fee += ($value ? $value : 0) * $values['quantity'];
+/**
+ * Volumetric weight (kg) for a product, converting store units to cm first.
+ */
+function wc_postnet_delivery_volumetric_weight($product, $divisor) {
+  $length = wc_get_dimension((float) $product->get_length(), 'cm');
+  $width  = wc_get_dimension((float) $product->get_width(), 'cm');
+  $height = wc_get_dimension((float) $product->get_height(), 'cm');
+  return wc_postnet_delivery_calc_volumetric_weight($length, $width, $height, $divisor);
+}
+
+/**
+ * Total chargeable weight (kg) for a shipping package: per item max(actual, volumetric) * qty, summed.
+ */
+function wc_postnet_delivery_chargeable_weight($package, $divisor) {
+  $items = array();
+  foreach ($package['contents'] as $values) {
+    $product = isset($values['data']) ? $values['data'] : null;
+    if (!$product) continue;
+    $items[] = array(
+      'actual'     => wc_get_weight((float) $product->get_weight(), 'kg'),
+      'volumetric' => wc_postnet_delivery_volumetric_weight($product, $divisor),
+      'qty'        => isset($values['quantity']) ? (int) $values['quantity'] : 0,
+    );
   }
-  
-  return $fee;
+  return wc_postnet_delivery_calc_chargeable_weight($items);
+}
+
+/**
+ * Variable (weight/volumetric) tiered rate for a service.
+ */
+function wc_postnet_delivery_service_rate($package, $service, $options) {
+  $divisor = (isset($options['volumetric_divisor']) && (float) $options['volumetric_divisor'] > 0)
+    ? (float) $options['volumetric_divisor'] : 5000;
+  $weight = wc_postnet_delivery_chargeable_weight($package, $divisor);
+  $cfg = isset($options['variable_rates'][$service]) ? $options['variable_rates'][$service] : array();
+  $base     = isset($cfg['base']) ? (float) $cfg['base'] : 0;
+  $included = isset($cfg['included_kg']) ? (float) $cfg['included_kg'] : 0;
+  $per_kg   = isset($cfg['per_kg']) ? (float) $cfg['per_kg'] : 0;
+  return wc_postnet_delivery_calc_tiered_rate($weight, $base, $included, $per_kg);
 }
 
 function wc_postnet_delivery_fetch_stores() {
