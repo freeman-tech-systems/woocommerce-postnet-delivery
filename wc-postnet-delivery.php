@@ -81,7 +81,9 @@ function wc_postnet_delivery_settings_init() {
       'default' => array(
         'service_type' => array(),
         'collection_type' => 'always_collect',
-        'waybill_option' => 'single',
+        'rate_mode' => 'fixed',
+        'volumetric_divisor' => 5000,
+        'variable_rates' => array(),
         'postnet_to_postnet_fee' => '',
         'regional_centre_express_fee' => '',
         'regional_centre_economy_fee' => '',
@@ -1561,11 +1563,27 @@ function wc_postnet_delivery_sanitize_options($input) {
   // Sanitize multi_site_mode
   $sanitized['multi_site_mode'] = isset($input['multi_site_mode']) ? boolval($input['multi_site_mode']) : false;
 
-  // Sanitize waybill option
-  $valid_waybill_options = array('single', 'individual', 'user_specified');
-  $sanitized['waybill_option'] = isset($input['waybill_option']) && in_array($input['waybill_option'], $valid_waybill_options, true)
-    ? $input['waybill_option']
-    : 'single';
+  // Sanitize rate mode (global Fixed vs Variable toggle)
+  $sanitized['rate_mode'] = (isset($input['rate_mode']) && $input['rate_mode'] === 'variable') ? 'variable' : 'fixed';
+
+  // Sanitize volumetric divisor (must be positive; default 5000)
+  $sanitized['volumetric_divisor'] = (isset($input['volumetric_divisor']) && floatval($input['volumetric_divisor']) > 0)
+    ? floatval($input['volumetric_divisor']) : 5000;
+
+  // Sanitize per-service variable rate tiers
+  $sanitized['variable_rates'] = array();
+  $valid_services = array_keys(wc_postnet_delivery_service_types());
+  $defaults_included = array('postnet_to_postnet' => 5);
+  foreach ($valid_services as $service) {
+    $row = (isset($input['variable_rates'][$service]) && is_array($input['variable_rates'][$service]))
+      ? $input['variable_rates'][$service] : array();
+    $default_included = isset($defaults_included[$service]) ? $defaults_included[$service] : 2;
+    $sanitized['variable_rates'][$service] = array(
+      'base'        => isset($row['base']) ? floatval($row['base']) : 0,
+      'included_kg' => (isset($row['included_kg']) && $row['included_kg'] !== '') ? floatval($row['included_kg']) : $default_included,
+      'per_kg'      => isset($row['per_kg']) ? floatval($row['per_kg']) : 0,
+    );
+  }
 
   // Sanitize collection_addresses
   if ($sanitized['multi_site_mode'] && isset($input['collection_addresses']) && is_array($input['collection_addresses'])) {
