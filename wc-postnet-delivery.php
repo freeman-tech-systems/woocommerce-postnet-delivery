@@ -38,8 +38,6 @@ add_action('woocommerce_after_shipping_rate', 'wc_postnet_delivery_checkout_fiel
 add_action('woocommerce_checkout_process', 'wc_postnet_delivery_validations');
 add_action('woocommerce_checkout_update_order_meta', 'wc_postnet_delivery_checkout_field_update_order_meta');
 add_action('woocommerce_order_details_after_order_table', 'wc_postnet_delivery_order_received_page');
-add_action('woocommerce_process_product_meta', 'wc_postnet_delivery_save_product_fields');
-add_action('woocommerce_product_options_shipping', 'wc_postnet_delivery_product_fields');
 add_action('woocommerce_thankyou', 'wc_postnet_delivery_collection_notification', 10, 1);
 add_action('woocommerce_order_status_completed', 'wc_postnet_delivery_create_waybill_on_completion', 10, 1);
 add_action('woocommerce_admin_order_data_after_billing_address', 'wc_postnet_delivery_admin_collection_address_field', 10, 1);
@@ -515,24 +513,6 @@ function wc_postnet_delivery_enqueue_scripts($hook) {
 }
 
 function wc_postnet_delivery_admin() {
-  // Check if the export action has been triggered
-  if (isset($_GET['action']) && $_GET['action'] === 'export_products') {
-    if (isset($_GET['_wpnonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_GET['_wpnonce'])), 'export_products_nonce')) {
-      wc_postnet_delivery_export_products_csv();
-    } else {
-      wp_die('Security check failed.');
-    }
-  }
-  
-  // Check if the import action has been triggered
-  if (isset($_POST['action']) && $_POST['action'] === 'import_products' && !empty($_FILES['postnet_delivery_csv'])) {
-    if (isset($_POST['postnet_delivery_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['postnet_delivery_nonce'])), 'postnet_delivery_action')) {
-      wc_postnet_delivery_import_products_csv();
-    } else {
-      wp_die('Security check failed.');
-    }
-  }
-  
   // Configure shipping options
   if (isset($_GET['action']) && $_GET['action'] === 'configure_shipping_options') {
     if (isset($_GET['_wpnonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_GET['_wpnonce'])), 'configure_shipping_options_nonce')) {
@@ -540,144 +520,6 @@ function wc_postnet_delivery_admin() {
     } else {
       wp_die('Security check failed.');
     }
-  }
-}
-
-function wc_postnet_delivery_csv_headers() {
-  $headers = ['Product ID', 'Product Name'];
-  $service_types = wc_postnet_delivery_service_types();
-  foreach ($service_types as $service_key=>$service_name){
-    if ($service_key == 'postnet_to_postnet') continue;
-    
-    $headers[] = $service_name;
-  }
-  
-  return $headers;
-}
-
-function wc_postnet_delivery_export_products_csv() {
-  // Define the CSV headers
-  $headers = wc_postnet_delivery_csv_headers();
-
-  // Set the headers to force download of the file
-  header('Content-Type: text/csv; charset=utf-8');
-  header('Content-Disposition: attachment; filename="woocommerce-products.csv"');
-
-  // Output the column headings directly
-  echo implode(',', $headers) . "\n";
-
-  // Get all the WooCommerce products
-  $args = array(
-    'post_type' => 'product',
-    'posts_per_page' => -1,
-  );
-
-  $products = get_posts($args);
-
-  foreach ($products as $product) {
-    // Get the product ID
-    $product_id = $product->ID;
-    // Get the product name
-    $product_name = get_the_title($product_id);
-
-    // Combine the data into a single row
-    $row = [
-      $product_id,
-      $product_name
-    ];
-
-    // Get the fees from the product meta
-    $service_types = wc_postnet_delivery_service_types();
-    foreach ($service_types as $service_key => $_service_name) {
-      if ($service_key == 'postnet_to_postnet') continue;
-
-      $row[] = get_post_meta($product_id, '_' . $service_key . '_fee', true);
-    }
-
-    // Output the row directly
-    echo implode(',', $row) . "\n";
-  }
-
-  // Terminate the current script to prevent WordPress template loading
-  exit();
-}
-
-function wc_postnet_delivery_import_products_csv() {
-  // Verify the nonce for security
-  if (!(isset($_POST['postnet_delivery_nonce']) && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['postnet_delivery_nonce'])), 'postnet_delivery_action'))) {
-    wp_die('Security check failed.');
-  }
-
-  // Initialize the WordPress filesystem
-  if (!function_exists('WP_Filesystem')) {
-    require_once ABSPATH . 'wp-admin/includes/file.php';
-  }
-
-  $access_type = get_filesystem_method();
-  if ($access_type === 'direct') {
-    $creds = request_filesystem_credentials(site_url() . '/wp-admin/', '', false, false, array());
-    if (!WP_Filesystem($creds)) {
-      wp_die('Could not initialize filesystem.');
-      return;
-    }
-  }
-
-  global $wp_filesystem;
-
-  // Check for file upload
-  if (isset($_FILES['postnet_delivery_csv']) && isset($_FILES['postnet_delivery_csv']['tmp_name'])) {
-    // Get the file path from the uploaded file
-    $file_path = $_FILES['postnet_delivery_csv']['tmp_name'];
-
-    // Check if the file exists and read its contents
-    if ($wp_filesystem->exists($file_path)) {
-      // Read the file into an array of lines
-      $file_contents = $wp_filesystem->get_contents_array($file_path);
-
-      if (!empty($file_contents)) {
-        // Extract the header line
-        $header = str_getcsv(array_shift($file_contents));
-
-        // Define the expected headers
-        $expected_headers = wc_postnet_delivery_csv_headers();
-
-        // Check if headers match
-        if ($header !== $expected_headers) {
-          // Add an admin notice on header mismatch
-          add_action('admin_notices', function() use ($header) {
-            echo '<div class="notice notice-error is-dismissible"><p>The uploaded file headers do not match the expected headers. Please check the file and try again.</p></div>';
-          });
-          return;
-        }
-
-        // Process each line of data
-        foreach ($file_contents as $line) {
-          $data = str_getcsv($line);
-          $product_id = intval($data[0]);
-
-          $col = 2;
-          $service_types = wc_postnet_delivery_service_types();
-          foreach ($service_types as $service_key => $_service_name) {
-            if ($service_key == 'postnet_to_postnet') continue;
-
-            $fee = wc_clean($data[$col]);
-            update_post_meta($product_id, '_' . $service_key . '_fee', $fee);
-            $col++;
-          }
-        }
-
-        // Add an admin notice on successful import
-        add_action('admin_notices', function() {
-          echo '<div class="notice notice-success is-dismissible"><p>Product delivery fees have been successfully updated.</p></div>';
-        });
-      } else {
-        wp_die('Failed to read the uploaded file.');
-      }
-    } else {
-      wp_die('Uploaded file not found.');
-    }
-  } else {
-    wp_die('No file was uploaded.');
   }
 }
 
@@ -837,62 +679,6 @@ function wc_postnet_delivery_create_shipping_option($zone, $method_type, $method
 function woocommerce_postnet_delivery_show_shipping_configured_notice() {
   if (isset($_GET['shipping_configured']) && $_GET['shipping_configured'] == '1') {
     echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Shipping options have been configured.', 'delivery-options-postnet-woocommerce') . '</p></div>';
-  }
-}
-
-function wc_postnet_delivery_product_fields() {
-  global $post;
-
-  // Get the enabled service types from the settings
-  $options = get_option('wc_postnet_delivery_options');
-  $enabled_services = isset($options['service_type']) ? $options['service_type'] : array();
-  $service_types = wc_postnet_delivery_service_types();
-  
-  if (!$enabled_services || (count($enabled_services) == 1 && $enabled_services[0] == 'postnet_to_postnet')) return;
-
-  echo '<div class="options_group">';
-  echo '<hr />';
-  echo '<p><strong>PostNet Delivery Fees</strong></p>';
-
-  // For each enabled service, add a corresponding field
-  foreach ($enabled_services as $service) {
-    if ($service == 'postnet_to_postnet') continue;
-    
-    $field_id = '_'.sanitize_title($service).'_fee';
-    $value = get_post_meta($post->ID, $field_id, true); // Retrieve the saved value
-    
-    woocommerce_wp_text_input(
-      [
-        'id' => $field_id,
-        // Translators: %s is the service type name.
-        'label' => sprintf(__('%s Delivery Fee', 'delivery-options-postnet-woocommerce'), $service_types[$service]),
-        'desc_tip' => 'true',
-        // Translators: %s is the service type name.
-        'description' => sprintf(__('Enter the delivery fee for %s service.', 'delivery-options-postnet-woocommerce'), $service_types[$service]),
-        'type' => 'number',
-        'custom_attributes' => [
-          'step' => 'any',
-          'min' => '0'
-        ],
-        'value' => $value
-      ]
-    );
-  }
-
-  echo '</div>';
-}
-
-function wc_postnet_delivery_save_product_fields($post_id) {
-  // Get the enabled service types from the settings
-  $options = get_option('wc_postnet_delivery_options');
-  $enabled_services = isset($options['service_type']) ? $options['service_type'] : array();
-
-  // Save the delivery fee for each enabled service
-  foreach ($enabled_services as $service) {
-    $field_id = '_'.sanitize_title($service).'_fee';
-    if (isset($_POST[$field_id])) {
-      update_post_meta($post_id, $field_id, wc_clean($_POST[$field_id]));
-    }
   }
 }
 
