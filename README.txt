@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.7.2
 Requires PHP: 7.4
-Stable tag: 1.0.13
+Stable tag: 1.0.14
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -84,6 +84,15 @@ When Multi Site Mode is enabled:
 * The selected collection address will be used as the originating address on the waybill
 
 == Changelog ==
+= 1.0.14 =
+* Added a global Rate Mode setting: choose Fixed rates or Variable (weight/volumetric) rates for all services
+* Variable rates are tiered per service: a base rate covers an included weight, then a per-kg charge applies above it
+* Chargeable weight uses the greater of actual or volumetric weight per product (volumetric = L x W x H in cm / divisor, default 5000), summed across the cart
+* Included-weight thresholds are editable per service (defaults: 5kg for Collect at PostNet, 2kg for door delivery)
+* Waybill creation is now always a manual action via the button on the order page (no longer created automatically at checkout or on order completion)
+* Number of Boxes is always available on the order page (defaults to 1) and affects the waybill only, not the rate
+* Removed per-product delivery fees and the Products CSV import/export. NOTE: stores that previously relied on per-product fees must switch to Fixed or Variable rates after upgrading
+
 = 1.0.13 =
 * Fixed settings not saving when Multi Site Mode collection address fields are empty but Multi Site Mode is not enabled
 * Collection address fields are no longer marked as required when Multi Site Mode is disabled
