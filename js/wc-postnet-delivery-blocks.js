@@ -615,6 +615,9 @@
                     setSelectedStore(data.data[0]);
                 }
                 renderStoreSelector(container, data.data);
+            } else if (data && typeof data.data === 'string' && data.data) {
+                // Server-side error with a specific message (e.g. no stores for this address)
+                throw new Error(data.data);
             } else {
                 throw new Error('Invalid store data received');
             }

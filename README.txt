@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.7.2
 Requires PHP: 7.4
-Stable tag: 1.0.14
+Stable tag: 1.0.15
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -84,6 +84,10 @@ When Multi Site Mode is enabled:
 * The selected collection address will be used as the originating address on the waybill
 
 == Changelog ==
+= 1.0.15 =
+* Fixed the store selector failing with "Error loading stores" on stores configured to ship to the billing address only: the store lookup now falls back to the billing address when the session shipping address has no city or postcode
+* The store selector now shows the actual reason a store lookup failed (e.g. no stores found for the entered address) instead of a generic error message
+
 = 1.0.14 =
 * Added a global Rate Mode setting: choose Fixed rates or Variable (weight/volumetric) rates for all services
 * Variable rates are tiered per service: a base rate covers an included weight, then a per-kg charge applies above it

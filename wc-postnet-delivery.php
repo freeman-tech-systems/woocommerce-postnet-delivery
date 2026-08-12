@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
  * Plugin Name: Delivery Options For PostNet
  * Plugin URI: https://github.com/freeman-tech-systems/woocommerce-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
- * Version: 1.0.14
+ * Version: 1.0.15
  * Author: Freeman Tech Systems
  * Author URI: https://github.com/freeman-tech-systems
  * License: GPL2
@@ -786,15 +786,34 @@ function wc_postnet_delivery_service_rate($package, $service, $options) {
 }
 
 function wc_postnet_delivery_fetch_stores() {
+  $customer = WC()->customer;
+
   $address_details = array_filter([
-    WC()->customer->get_shipping_address(),
-    WC()->customer->get_shipping_address_2(),
-    WC()->customer->get_shipping_city(),
-    WC()->customer->get_shipping_state(),
-    WC()->customer->get_shipping_postcode()
+    $customer->get_shipping_address(),
+    $customer->get_shipping_address_2(),
+    $customer->get_shipping_city(),
+    $customer->get_shipping_state(),
+    $customer->get_shipping_postcode()
   ]);
-  
-  $address = implode(', ', array_filter($address_details));
+
+  // Stores set to ship to the billing address only never populate the session
+  // shipping address, so a state/country geolocation stub is all we would send.
+  // Without a city or postcode the PostNet lookup returns no stores.
+  if (!$customer->get_shipping_city() && !$customer->get_shipping_postcode()) {
+    $billing_details = array_filter([
+      $customer->get_billing_address(),
+      $customer->get_billing_address_2(),
+      $customer->get_billing_city(),
+      $customer->get_billing_state(),
+      $customer->get_billing_postcode()
+    ]);
+
+    if ($customer->get_billing_city() || $customer->get_billing_postcode()) {
+      $address_details = $billing_details;
+    }
+  }
+
+  $address = implode(', ', $address_details);
   $body = wc_postnet_fetch_url('https://postnet.co.za/courier_package-calculate/?data%5Baddress%5D='.urlencode($address));
   return json_decode( $body );
 }
@@ -804,19 +823,20 @@ function wc_postnet_delivery_stores() {
   if (isset($_POST['security']) && wp_verify_nonce(sanitize_text_field($_POST['security']), 'wc_postnet_delivery_nonce')) {
     try {
       $stores = wc_postnet_delivery_fetch_stores();
-      
-      if (empty($stores)) {
-        wp_send_json_error('No stores found');
+
+      // json_decode() of an empty object is not "empty", so count both cases
+      if (empty($stores) || (is_object($stores) && !get_object_vars($stores))) {
+        wp_send_json_error(__('No PostNet stores were found for your delivery address. Please check your address details and try again.', 'delivery-options-postnet-woocommerce'));
         return;
       }
-      
+
       // Format stores for the frontend
       $formatted_stores = array();
       foreach ($stores as $store) {
         // Support both object and array access
         $code = is_object($store) ? ($store->code ?? null) : ($store['code'] ?? null);
         $name = is_object($store) ? ($store->name ?? $store->store_name ?? null) : ($store['name'] ?? $store['store_name'] ?? null);
-        
+
         if ($code && $name) {
           $formatted_stores[] = array(
             'code' => $code,
@@ -824,7 +844,12 @@ function wc_postnet_delivery_stores() {
           );
         }
       }
-      
+
+      if (empty($formatted_stores)) {
+        wp_send_json_error(__('No PostNet stores were found for your delivery address. Please check your address details and try again.', 'delivery-options-postnet-woocommerce'));
+        return;
+      }
+
       wp_send_json_success($formatted_stores);
     } catch (Exception $e) {
       wp_send_json_error('Error: ' . $e->getMessage());
