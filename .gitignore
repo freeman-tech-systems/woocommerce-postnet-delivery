@@ -2,3 +2,6 @@
 *.zip
 deploy/
 deploy-config.conf
+.playwright-cli/
+checkout-initial.yaml
+.svn/

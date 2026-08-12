@@ -61,15 +61,15 @@ else
     fi
 fi
 
-# Clean up trunk directory
+# Clean up trunk directory (including hidden files, but never .svn metadata)
 echo "Cleaning trunk directory..."
 cd "$DEPLOY_DIR/trunk"
-rm -rf *
+find . -mindepth 1 -maxdepth 1 ! -name '.svn' -exec rm -rf {} +
 
-# Clean up assets directory
+# Clean up assets directory (including hidden files, but never .svn metadata)
 echo "Cleaning assets directory..."
 cd "$DEPLOY_DIR/assets"
-rm -rf *
+find . -mindepth 1 -maxdepth 1 ! -name '.svn' -exec rm -rf {} +
 
 # Copy current plugin files to trunk, excluding docker and .gitignore files
 echo "Copying current plugin files to trunk..."
@@ -79,6 +79,9 @@ cd "$CURRENT_DIR"
 echo "docker/" > "$TEMP_EXCLUDE"
 echo ".git/" >> "$TEMP_EXCLUDE"
 echo ".gitignore" >> "$TEMP_EXCLUDE"
+echo ".svn/" >> "$TEMP_EXCLUDE"
+echo ".playwright-cli/" >> "$TEMP_EXCLUDE"
+echo "checkout-initial.yaml" >> "$TEMP_EXCLUDE"
 echo "publish.sh" >> "$TEMP_EXCLUDE"
 echo "deploy/" >> "$TEMP_EXCLUDE"
 echo "assets/" >> "$TEMP_EXCLUDE"
