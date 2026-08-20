@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.7.2
 Requires PHP: 7.4
-Stable tag: 1.0.15
+Stable tag: 1.0.16
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -85,6 +85,11 @@ When Multi Site Mode is enabled:
 * The selected collection address will be used as the originating address on the waybill
 
 == Changelog ==
+= 1.0.16 =
+* Added an optional customer notification email sent when a waybill is created, containing the waybill number and tracking link
+* The email is off by default; enable it with the new "Waybill Email" checkbox on the PostNet Delivery settings page
+* The email's subject, heading and additional content can be customised under WooCommerce > Settings > Emails > PostNet Waybill Created, and its templates can be overridden in the theme
+
 = 1.0.15 =
 * Fixed the store selector failing with "Error loading stores" on stores configured to ship to the billing address only: the store lookup now falls back to the billing address when the session shipping address has no city or postcode
 * The store selector now shows the actual reason a store lookup failed (e.g. no stores found for the entered address) instead of a generic error message
