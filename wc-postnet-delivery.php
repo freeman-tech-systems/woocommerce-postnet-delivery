@@ -48,6 +48,7 @@ add_action('wp_ajax_validate_google_api_key', 'wc_postnet_validate_google_api_ke
 add_action('wp_ajax_wc_postnet_retry_waybill', 'wc_postnet_delivery_retry_waybill_ajax');
 
 add_filter('woocommerce_package_rates', 'wc_postnet_delivery_custom_shipping_methods_logic', 10, 2);
+add_filter('woocommerce_email_classes', 'wc_postnet_delivery_register_waybill_email');
 
 // Hook for enqueuing scripts
 add_action('wp_enqueue_scripts', 'wc_postnet_delivery_enqueue_frontend_scripts');
@@ -63,6 +64,12 @@ function wc_postnet_delivery_compatibility() {
   if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
     \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', __FILE__, true);
   }
+}
+
+function wc_postnet_delivery_register_waybill_email($email_classes) {
+  require_once plugin_dir_path(__FILE__) . 'includes/class-wc-postnet-delivery-waybill-email.php';
+  $email_classes['WC_Postnet_Delivery_Waybill_Email'] = new WC_Postnet_Delivery_Waybill_Email();
+  return $email_classes;
 }
 
 function wc_postnet_delivery_settings_init() {
@@ -89,6 +96,7 @@ function wc_postnet_delivery_settings_init() {
         'postnet_api_passcode' => '',
         'google_api_key' => '',
         'multi_site_mode' => false,
+        'waybill_email_enabled' => false,
         'collection_addresses' => array(),
         'postnet_shipping_instance_ids' => array()
       )
@@ -290,6 +298,16 @@ function wc_postnet_delivery_options_page() {
               <?php echo esc_html__('Enable Multi Site Mode', 'delivery-options-postnet-woocommerce'); ?>
             </label>
             <p class="description"><?php echo esc_html__('When enabled, waybills will only be created when order status is changed to Completed and a collection address is selected.', 'delivery-options-postnet-woocommerce'); ?></p>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row"><label for="waybill_email_enabled"><?php echo esc_html__('Waybill Email', 'delivery-options-postnet-woocommerce'); ?></label></th>
+          <td>
+            <label>
+              <input type="checkbox" name="wc_postnet_delivery_options[waybill_email_enabled]" id="waybill_email_enabled" value="1" <?php checked(isset($options['waybill_email_enabled']) ? $options['waybill_email_enabled'] : false); ?> />
+              <?php echo esc_html__('Email the customer when a waybill is created', 'delivery-options-postnet-woocommerce'); ?>
+            </label>
+            <p class="description"><?php echo esc_html__('Sends the waybill number and tracking link to the customer\'s billing email when a waybill is successfully created. The subject and content can be customised under WooCommerce > Settings > Emails > PostNet Waybill Created.', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
       </table>
@@ -1321,6 +1339,9 @@ function wc_postnet_delivery_sanitize_options($input) {
   // Sanitize multi_site_mode
   $sanitized['multi_site_mode'] = isset($input['multi_site_mode']) ? boolval($input['multi_site_mode']) : false;
 
+  // Sanitize waybill email toggle
+  $sanitized['waybill_email_enabled'] = isset($input['waybill_email_enabled']) ? boolval($input['waybill_email_enabled']) : false;
+
   // Sanitize rate mode (global Fixed vs Variable toggle)
   $sanitized['rate_mode'] = (isset($input['rate_mode']) && $input['rate_mode'] === 'variable') ? 'variable' : 'fixed';
 
@@ -2020,7 +2041,12 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
       } else {
         error_log('PostNet: Waybill created successfully for order ' . $order_id . ' with PostNet store.');
       }
-      
+
+      // Instantiate WooCommerce email classes (lazy-loaded) so the customer
+      // waybill email can listen for this action.
+      WC()->mailer();
+      do_action('wc_postnet_delivery_waybill_created', $order_id);
+
       return true;
     } else {
       // Extract error message from response

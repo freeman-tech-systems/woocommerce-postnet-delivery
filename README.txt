@@ -32,6 +32,7 @@ By using this plugin, you agree to PostNet's terms of service and privacy policy
 * WooCommerce Compatibility: Compatible with the latest version of WooCommerce.
 * Customizable: Modify the shipping methods according to your store's needs.
 * Multi Site Mode: Support for multiple collection addresses with delayed waybill creation until order completion.
+* Waybill Email: Optionally email the customer their waybill number and tracking link when a waybill is created (off by default; enable it on the PostNet Delivery settings page).
 
 == Installation ==
 1. Download the plugin zip file from the [releases page](https://github.com/freeman-tech-systems/woocommerce-postnet-delivery/releases).
