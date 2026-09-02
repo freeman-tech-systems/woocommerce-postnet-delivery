@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
  * Plugin Name: Delivery Options For PostNet
  * Plugin URI: https://github.com/freeman-tech-systems/woocommerce-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
- * Version: 1.0.16
+ * Version: 1.0.17
  * Author: Freeman Tech Systems
  * Author URI: https://github.com/freeman-tech-systems
  * License: GPL2
@@ -1811,6 +1811,22 @@ function wc_postnet_delivery_save_admin_number_of_boxes_field($order_id, $post) 
 }
 
 /**
+ * Record a waybill creation failure on the order so the admin order screen can
+ * show the real reason instead of a generic message.
+ *
+ * @param int    $order_id
+ * @param string $message  Human readable reason (already translated)
+ * @return false
+ */
+function wc_postnet_delivery_record_waybill_failure($order_id, $message) {
+  error_log('PostNet: Waybill creation failed for order ' . $order_id . ': ' . $message);
+  update_post_meta($order_id, '_waybill_creation_attempted', current_time('mysql'));
+  update_post_meta($order_id, '_waybill_creation_status', 'failed');
+  update_post_meta($order_id, '_waybill_creation_error', sanitize_text_field($message));
+  return false;
+}
+
+/**
  * Unified waybill creation method used by both old and new methods
  */
 function wc_postnet_delivery_create_waybill($order, $collection_address = null) {
@@ -1823,8 +1839,7 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
     
     $options = get_option('wc_postnet_delivery_options');
     if (!$options) {
-      error_log('PostNet: No plugin options found');
-      return false;
+      return wc_postnet_delivery_record_waybill_failure($order->get_id(), __('PostNet plugin is not configured.', 'delivery-options-postnet-woocommerce'));
     }
     
     $postal_code = $order->get_shipping_postcode();
@@ -1832,61 +1847,43 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
     $main_check = $postal_code ? json_decode(wc_postnet_fetch_url('https://pnsa.restapis.co.za/public/is-main?postcode='.$postal_code)) : null;
     $is_main = $main_check ? $main_check->main : false;
   
-  // Try to get shipping method from session first (if available)
+  // Resolve the shipping method from the order's own shipping line. The current
+  // WooCommerce session belongs to whoever is making this request (typically an
+  // admin clicking "Create Waybill"), not to the order, so it is never consulted.
   $chosen_method = '';
-  if (function_exists('WC') && WC() && WC()->session && WC()->session->get('chosen_shipping_methods')) {
-    $chosen_methods = WC()->session->get('chosen_shipping_methods');
-    $chosen_method = !empty($chosen_methods) ? $chosen_methods[0] : '';
-    error_log('PostNet: Got shipping method from session: ' . $chosen_method);
-  } else {
-    error_log('PostNet: Session not available, trying order meta for order ' . $order->get_id());
+  $chosen_method_title = '';
+  $shipping_items = $order->get_items('shipping');
+  if (!empty($shipping_items)) {
+    $shipping_item = reset($shipping_items);
+    $chosen_method = $shipping_item->get_method_id() . ':' . $shipping_item->get_instance_id();
+    $chosen_method_title = $shipping_item->get_method_title();
   }
-  
-  // If no chosen method in session, try to get it from the order
+
   if (empty($chosen_method)) {
-    $chosen_method = $order->get_meta('_chosen_shipping_method');
-    if (empty($chosen_method)) {
-      $shipping_items = $order->get_items('shipping');
-      if (!empty($shipping_items)) {
-        $shipping_item = reset($shipping_items);
-        $chosen_method = $shipping_item->get_method_id() . ':' . $shipping_item->get_instance_id();
-        error_log('PostNet: Got shipping method from shipping items: ' . $chosen_method);
-      } else {
-        error_log('PostNet: No shipping items found for order ' . $order->get_id());
-      }
-    } else {
-      error_log('PostNet: Got shipping method from order meta: ' . $chosen_method);
-    }
+    return wc_postnet_delivery_record_waybill_failure($order->get_id(), __('The order has no shipping line, so the PostNet service could not be determined.', 'delivery-options-postnet-woocommerce'));
   }
-  
-  if (empty($chosen_method)) {
-    error_log('PostNet: No shipping method found for order ' . $order->get_id());
-    return false;
-  }
-  
+
   $rate = null;
   $zone = wc_postnet_delivery_get_zone();
-  if (!$zone) {
-    error_log('PostNet: Could not get shipping zone for order ' . $order->get_id());
-    return false;
-  }
-  
-  $shipping_methods = $zone->get_shipping_methods();
+  $shipping_methods = $zone ? $zone->get_shipping_methods() : array();
   if (empty($shipping_methods)) {
-    error_log('PostNet: No shipping methods found in zone for order ' . $order->get_id());
-    return false;
+    return wc_postnet_delivery_record_waybill_failure($order->get_id(), __('The South Africa shipping zone has no shipping methods. Run "Configure PostNet Shipping" on the PostNet Delivery settings page.', 'delivery-options-postnet-woocommerce'));
   }
-  
+
   foreach ($shipping_methods as $method) {
     if ($method->id . ':' . $method->instance_id == $chosen_method) {
       $rate = $method;
       break;
     }
   }
-  
+
   if (!$rate) {
-    error_log('PostNet: Could not find matching shipping method for order ' . $order->get_id() . ' with method: ' . $chosen_method);
-    return false;
+    return wc_postnet_delivery_record_waybill_failure($order->get_id(), sprintf(
+      /* translators: 1: shipping method title, 2: shipping rate id */
+      __('The order\'s shipping method "%1$s" (%2$s) is not in the South Africa shipping zone.', 'delivery-options-postnet-woocommerce'),
+      $chosen_method_title,
+      $chosen_method
+    ));
   }
 
   $postnet_internal_id = wc_postnet_delivery_get_postnet_internal_id_for_rate($chosen_method);
@@ -1905,7 +1902,12 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
       $service_type .= 'economy';
       break;
     default:
-      return false;
+      return wc_postnet_delivery_record_waybill_failure($order->get_id(), sprintf(
+        /* translators: 1: shipping method title, 2: shipping rate id */
+        __('The order\'s shipping method "%1$s" (%2$s) is not a PostNet shipping method.', 'delivery-options-postnet-woocommerce'),
+        $chosen_method_title,
+        $chosen_method
+      ));
   }
   
   // Define the base data to send
