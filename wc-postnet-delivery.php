@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
  * Plugin Name: Delivery Options For PostNet
  * Plugin URI: https://github.com/freeman-tech-systems/woocommerce-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
- * Version: 1.0.17
+ * Version: 1.0.18
  * Author: Freeman Tech Systems
  * Author URI: https://github.com/freeman-tech-systems
  * License: GPL2
@@ -1926,6 +1926,8 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
     'receiver_contact_number' => $order->get_billing_phone(),
     'order_number' => $order->get_order_number(),
     'order_total' => (float) $order->get_total(),
+    'shipping_total' => (float) $order->get_shipping_total(),
+    'tax_total' => (float) $order->get_total_tax(),
     'order_items' => []
   ];
   
@@ -1949,11 +1951,19 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
   // Get the order items
   foreach ($order->get_items() as $item_id => $item) {
     $product = $item->get_product();
+    $qty = (int) $item->get_quantity();
+    // get_total() is the total for the line, after discounts. The API wants both that
+    // and the per-unit price, so send them explicitly rather than leaving the reader
+    // to guess which one 'price' holds.
+    $line_total = (float) $item->get_total();
     $data['order_items'][] = [
       'product_id' => (string)$product->get_id(),
       'description' => $product->get_name(),
-      'qty' => $item->get_quantity(),
-      'price' => (float) $item->get_total(),
+      'qty' => $qty,
+      'price' => $line_total,
+      'unit_price' => $qty > 0 ? $line_total / $qty : $line_total,
+      'line_total' => $line_total,
+      // weight and dimensions are per unit; the API scales weight by qty
       'weight' => (float) $product->get_weight(),
       'length' => (float) $product->get_length(),
       'width' => (float) $product->get_width(),

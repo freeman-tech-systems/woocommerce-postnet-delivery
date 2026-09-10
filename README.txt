@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.7.2
 Requires PHP: 7.4
-Stable tag: 1.0.17
+Stable tag: 1.0.18
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -85,6 +85,12 @@ When Multi Site Mode is enabled:
 * The selected collection address will be used as the originating address on the waybill
 
 == Changelog ==
+= 1.0.18 =
+* Fixed the item prices in the PostNet order email being multiplied by the quantity a second time, so a line of 5 x R32.00 was shown as 5 x R160.00 = R800.00
+* The order email now itemises the delivery fee and tax, so the line items add up to the order total instead of leaving the difference unexplained
+* Order items now send the per-unit price and the line total as separate fields rather than a single ambiguous price
+* Fixed the waybill weight being under-declared: the per-unit product weight was counted once per line regardless of how many units were ordered
+
 = 1.0.17 =
 * Fixed "Create Waybill" on the order screen failing with a generic error whenever the logged-in admin's own WooCommerce session held a chosen shipping method (for example after viewing the storefront cart or checkout): the waybill now always uses the order's shipping line and never the current session
 * When waybill creation stops before contacting PostNet (no shipping line, shipping zone not configured, or a non-PostNet shipping method), the actual reason is now recorded on the order and shown on the order screen instead of "Failed to create waybill. Please check the error logs."
