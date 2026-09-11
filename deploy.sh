@@ -87,13 +87,18 @@ echo "deploy/" >> "$TEMP_EXCLUDE"
 echo "assets/" >> "$TEMP_EXCLUDE"
 echo "deploy.sh" >> "$TEMP_EXCLUDE"
 echo "deploy-config.template.conf" >> "$TEMP_EXCLUDE"
+# Internal planning/design docs. They stay in git but must not be published
+# to WordPress.org, where they would ship inside every user's plugin folder.
+echo "docs/superpowers/" >> "$TEMP_EXCLUDE"
 if [ -f ".gitignore" ]; then
     # Add .gitignore contents, filtering out empty lines and comments
     grep -v '^#' ".gitignore" | grep -v '^$' >> "$TEMP_EXCLUDE"
 fi
 
-# Use rsync with the exclude file
-rsync -rc --exclude-from="$TEMP_EXCLUDE" . "$DEPLOY_DIR/trunk/"
+# Use rsync with the exclude file. -m prunes directories left empty by the
+# excludes (e.g. docs/), so they are not created in trunk and picked up by
+# the svn add below.
+rsync -rcm --exclude-from="$TEMP_EXCLUDE" . "$DEPLOY_DIR/trunk/"
 
 # Copy assets directory
 echo "Copying assets directory..."
