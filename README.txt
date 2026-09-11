@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.7.2
 Requires PHP: 7.4
-Stable tag: 1.0.18
+Stable tag: 1.0.19
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -85,6 +85,14 @@ When Multi Site Mode is enabled:
 * The selected collection address will be used as the originating address on the waybill
 
 == Changelog ==
+= 1.0.19 =
+* Fixed "Error loading stores: Error fetching stores" at checkout whenever the PostNet site was slow: requests used WordPress's 5 second default timeout and failed outright, so a slow spell on PostNet's side became a hard checkout error. The timeout is now 20 seconds
+* The PostNet store list is now cached for 12 hours instead of being downloaded on every settings page load and every store lookup, and the last good copy is reused for up to 30 days if PostNet is unreachable
+* Nearest-store lookups are cached per delivery address for an hour, so recalculating shipping rates on the checkout page no longer re-queries PostNet every time
+* Checkout now says PostNet is not responding when the request fails, instead of reporting that no stores were found near the address
+* The settings page no longer dies with a raw JSON error when the store list cannot be fetched; it shows the store dropdown with an explanatory notice
+* Removed a leftover debug statement that wrote the entire store list to the WordPress debug log on every settings page load
+
 = 1.0.18 =
 * Fixed the item prices in the PostNet order email being multiplied by the quantity a second time, so a line of 5 x R32.00 was shown as 5 x R160.00 = R800.00
 * The order email now itemises the delivery fee and tax, so the line items add up to the order total instead of leaving the difference unexplained

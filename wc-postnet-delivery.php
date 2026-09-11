@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
  * Plugin Name: Delivery Options For PostNet
  * Plugin URI: https://github.com/freeman-tech-systems/woocommerce-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
- * Version: 1.0.18
+ * Version: 1.0.19
  * Author: Freeman Tech Systems
  * Author URI: https://github.com/freeman-tech-systems
  * License: GPL2
@@ -136,15 +136,71 @@ function wc_postnet_delivery_service_types() {
   ];
 }
 
-function wc_postnet_fetch_url($url){
-  $response = wp_remote_get($url);
-  
+/**
+ * How long a successful store list is reused before we ask PostNet again, and
+ * how long we will keep serving the last good copy if PostNet is unreachable.
+ */
+const POSTNET_STORE_LIST_TTL = 12 * HOUR_IN_SECONDS;
+const POSTNET_STORE_LIST_STALE_TTL = 30 * DAY_IN_SECONDS;
+const POSTNET_NEAREST_STORES_TTL = HOUR_IN_SECONDS;
+
+/**
+ * GET a PostNet URL.
+ *
+ * The PostNet site occasionally takes far longer than WordPress's 5 second
+ * default to answer, which turned every slow spell into a hard checkout error.
+ * Callers get false back on failure and decide what to show; this helper must
+ * never emit a response itself, because one of its callers renders the admin
+ * settings page and wp_send_json_error() would kill that page mid-render.
+ *
+ * @return string|false Response body, or false if the request failed.
+ */
+function wc_postnet_fetch_url($url, $timeout = 20){
+  $response = wp_remote_get($url, array('timeout' => $timeout));
+
   if ( is_wp_error( $response ) ) {
-    wp_send_json_error( 'Error fetching stores' );
-    return;
+    error_log( 'PostNet: request to ' . $url . ' failed: ' . $response->get_error_message() );
+    return false;
+  }
+
+  $code = wp_remote_retrieve_response_code( $response );
+  if ( $code < 200 || $code >= 300 ) {
+    error_log( 'PostNet: request to ' . $url . ' returned HTTP ' . $code );
+    return false;
   }
 
   return wp_remote_retrieve_body( $response );
+}
+
+/**
+ * The full PostNet store list, cached.
+ *
+ * This is a ~250 KB payload that changes rarely, and it was previously refetched
+ * on every settings page load and every store-details AJAX call. On failure we
+ * fall back to the last good copy so a PostNet outage does not empty the store
+ * dropdown or break waybill lookups.
+ *
+ * @return array Store objects, empty if we have never had a successful fetch.
+ */
+function wc_postnet_delivery_get_store_list() {
+  $cached = get_transient( 'wc_postnet_store_list' );
+  if ( is_array( $cached ) ) {
+    return $cached;
+  }
+
+  $body = wc_postnet_fetch_url( 'https://www.postnet.co.za/cart_store-json_list/?local=1' );
+  $stores = $body === false ? null : json_decode( $body );
+
+  if ( ! is_array( $stores ) || empty( $stores ) ) {
+    // Serve the last good copy rather than nothing.
+    $stale = get_transient( 'wc_postnet_store_list_stale' );
+    return is_array( $stale ) ? $stale : array();
+  }
+
+  set_transient( 'wc_postnet_store_list', $stores, POSTNET_STORE_LIST_TTL );
+  set_transient( 'wc_postnet_store_list_stale', $stores, POSTNET_STORE_LIST_STALE_TTL );
+
+  return $stores;
 }
 
 function wc_postnet_delivery_options_page() {
@@ -163,8 +219,7 @@ function wc_postnet_delivery_options_page() {
     ];
   }
   
-  $stores = json_decode(wc_postnet_fetch_url('https://www.postnet.co.za/cart_store-json_list/?local=1'));
-  error_log(print_r($stores, true));
+  $stores = wc_postnet_delivery_get_store_list();
   $selected_store = isset($options['postnet_store']) ? esc_attr($options['postnet_store']) : '';
   ?>
   <div class="wrap">
@@ -263,10 +318,14 @@ function wc_postnet_delivery_options_page() {
               <?php
               $selected_store = isset($options['postnet_store']) ? esc_attr($options['postnet_store']) : '';
               foreach ($stores as $store){
-                echo '<option value="'.esc_attr($store->code).'" data-email="'.esc_attr($store->email).'"'.selected($selected_store, $store->code).'>'.esc_html($store->store_name).'</option>';
+                $email = isset($store->email) ? $store->email : '';
+                echo '<option value="'.esc_attr($store->code).'" data-email="'.esc_attr($email).'"'.selected($selected_store, $store->code).'>'.esc_html($store->store_name).'</option>';
               }
               ?>
             </select>
+            <?php if (empty($stores)) { ?>
+              <p class="description" style="color:#b32d2e;"><?php echo esc_html__('The PostNet store list could not be loaded. PostNet may be temporarily unavailable; reload this page to try again.', 'delivery-options-postnet-woocommerce'); ?></p>
+            <?php } ?>
           </td>
         </tr>
         <tr>
@@ -832,8 +891,34 @@ function wc_postnet_delivery_fetch_stores() {
   }
 
   $address = implode(', ', $address_details);
+  if ($address === '') {
+    return null;
+  }
+
+  // The nearest-store lookup is deterministic per address, so cache it briefly.
+  // Without this, every shipping-rate recalculation on the checkout page hits
+  // PostNet again.
+  $cache_key = 'wc_postnet_near_' . md5($address);
+  $cached = get_transient($cache_key);
+  if ($cached !== false) {
+    return $cached;
+  }
+
   $body = wc_postnet_fetch_url('https://postnet.co.za/courier_package-calculate/?data%5Baddress%5D='.urlencode($address));
-  return json_decode( $body );
+  if ($body === false) {
+    // Distinguish "PostNet is unreachable" from "PostNet knows of no stores here".
+    return false;
+  }
+
+  $stores = json_decode( $body );
+
+  // Only cache a real result. Caching an empty one would lock the customer out
+  // of this address for the full TTL if PostNet answered with nothing by mistake.
+  if (!empty($stores) && !(is_object($stores) && !get_object_vars($stores))) {
+    set_transient($cache_key, $stores, POSTNET_NEAREST_STORES_TTL);
+  }
+
+  return $stores;
 }
 
 function wc_postnet_delivery_stores() {
@@ -841,6 +926,11 @@ function wc_postnet_delivery_stores() {
   if (isset($_POST['security']) && wp_verify_nonce(sanitize_text_field($_POST['security']), 'wc_postnet_delivery_nonce')) {
     try {
       $stores = wc_postnet_delivery_fetch_stores();
+
+      if ($stores === false) {
+        wp_send_json_error(__('PostNet is not responding at the moment, so we could not load the store list. Please try again in a few minutes.', 'delivery-options-postnet-woocommerce'));
+        return;
+      }
 
       // json_decode() of an empty object is not "empty", so count both cases
       if (empty($stores) || (is_object($stores) && !get_object_vars($stores))) {
@@ -1568,8 +1658,13 @@ function wc_postnet_delivery_get_store_details() {
   }
   
   // Get all stores
-  $all_stores = json_decode(wc_postnet_fetch_url('https://www.postnet.co.za/cart_store-json_list/?local=1'));
-  
+  $all_stores = wc_postnet_delivery_get_store_list();
+
+  if (empty($all_stores)) {
+    wp_send_json_error(array('message' => __('The PostNet store list is temporarily unavailable. Please try again shortly.', 'delivery-options-postnet-woocommerce')));
+    return;
+  }
+
   // Find the matching store
   $store_details = null;
   foreach ($all_stores as $store) {
