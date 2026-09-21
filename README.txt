@@ -4,7 +4,7 @@ Tags: WooCommerce, PostNet, Shipping, Delivery
 Requires at least: 4.0
 Tested up to: 6.7.2
 Requires PHP: 7.4
-Stable tag: 1.0.19
+Stable tag: 1.0.20
 License: GPL v2
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -85,6 +85,11 @@ When Multi Site Mode is enabled:
 * The selected collection address will be used as the originating address on the waybill
 
 == Changelog ==
+= 1.0.20 =
+* The "Collect at PostNet" shipping line on invoices, order emails, the order confirmation page and My Account now names the store the customer chose, for example "R 109.00 via Collect at PostNet (EDENVALE)"
+* Existing orders pick this up as well, so re-generating an older invoice shows the store
+* Developers can change the wording with the new wc_postnet_delivery_store_shipping_method_name filter
+
 = 1.0.19 =
 * Fixed "Error loading stores: Error fetching stores" at checkout whenever the PostNet site was slow: requests used WordPress's 5 second default timeout and failed outright, so a slow spell on PostNet's side became a hard checkout error. The timeout is now 20 seconds
 * The PostNet store list is now cached for 12 hours instead of being downloaded on every settings page load and every store lookup, and the last good copy is reused for up to 30 days if PostNet is unreachable

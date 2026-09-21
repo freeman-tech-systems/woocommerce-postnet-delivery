@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
  * Plugin Name: Delivery Options For PostNet
  * Plugin URI: https://github.com/freeman-tech-systems/woocommerce-postnet-delivery
  * Description: Adds PostNet delivery options to WooCommerce checkout.
- * Version: 1.0.19
+ * Version: 1.0.20
  * Author: Freeman Tech Systems
  * Author URI: https://github.com/freeman-tech-systems
  * License: GPL2
@@ -49,6 +49,7 @@ add_action('wp_ajax_wc_postnet_retry_waybill', 'wc_postnet_delivery_retry_waybil
 
 add_filter('woocommerce_package_rates', 'wc_postnet_delivery_custom_shipping_methods_logic', 10, 2);
 add_filter('woocommerce_email_classes', 'wc_postnet_delivery_register_waybill_email');
+add_filter('woocommerce_order_shipping_method', 'wc_postnet_delivery_order_shipping_method_with_store', 10, 2);
 
 // Hook for enqueuing scripts
 add_action('wp_enqueue_scripts', 'wc_postnet_delivery_enqueue_frontend_scripts');
@@ -1089,11 +1090,84 @@ function wc_postnet_delivery_validations() {
   }
 }
 
+/**
+ * Read the PostNet store chosen at checkout from an order.
+ *
+ * The store is saved as a JSON pair ["<store code>", "<store name>"] with
+ * update_post_meta, so post meta is read first. The order's own meta is
+ * checked as a fallback for sites where the value has been synced into the
+ * HPOS order tables.
+ *
+ * @param WC_Order $order
+ * @return array|null array('code' => string, 'name' => string), or null when no store was chosen
+ */
+function wc_postnet_delivery_get_order_destination_store($order) {
+  $raw = get_post_meta($order->get_id(), 'Destination Store', true);
+  if (empty($raw)) {
+    $raw = $order->get_meta('Destination Store', true);
+  }
+  if (empty($raw) || !is_string($raw)) {
+    return null;
+  }
+
+  $store = json_decode($raw);
+  if (!is_array($store) || !isset($store[1]) || $store[1] === '') {
+    return null;
+  }
+
+  return array(
+    'code' => isset($store[0]) ? (string) $store[0] : '',
+    'name' => (string) $store[1],
+  );
+}
+
+/**
+ * Append the chosen store to the "Collect at PostNet" shipping method name.
+ *
+ * WooCommerce builds the shipping line on invoices, order emails, the order
+ * confirmation page and My Account from WC_Order::get_shipping_method(), so
+ * this turns "R 109.00 via Collect at PostNet" into
+ * "R 109.00 via Collect at PostNet (EDENVALE)".
+ *
+ * Only the store-collection shipping line is changed. The store meta on its
+ * own is not enough: the blocks checkout keeps a previously chosen store in a
+ * cookie for a day, so a door-delivery order can carry a stale store.
+ *
+ * @param string   $method_name Comma-separated shipping method names.
+ * @param WC_Order $order
+ * @return string
+ */
+function wc_postnet_delivery_order_shipping_method_with_store($method_name, $order) {
+  if (!($order instanceof WC_Order)) {
+    return $method_name;
+  }
+
+  $store = wc_postnet_delivery_get_order_destination_store($order);
+  if ($store === null) {
+    return $method_name;
+  }
+
+  $names = array();
+  $store_line_found = false;
+  foreach ($order->get_shipping_methods() as $shipping_item) {
+    $name = $shipping_item->get_name();
+    $rate_id = $shipping_item->get_method_id() . ':' . $shipping_item->get_instance_id();
+    if (wc_postnet_delivery_get_postnet_internal_id_for_rate($rate_id) === POSTNET_METHOD_ID_STORE) {
+      /* translators: 1: shipping method title, 2: PostNet store name */
+      $with_store = sprintf(__('%1$s (%2$s)', 'delivery-options-postnet-woocommerce'), $name, $store['name']);
+      $name = apply_filters('wc_postnet_delivery_store_shipping_method_name', $with_store, $name, $store, $order);
+      $store_line_found = true;
+    }
+    $names[] = $name;
+  }
+
+  return $store_line_found ? implode(', ', $names) : $method_name;
+}
+
 function wc_postnet_delivery_order_received_page($order) {
-  $destination_store = get_post_meta($order->get_id(), 'Destination Store', true);
-  if (!empty($destination_store)) {
-    $store = json_decode($destination_store);
-    echo '<p><strong>' . esc_html__('Destination Store', 'delivery-options-postnet-woocommerce') . ':</strong> ' . esc_html($store[1]) . '</p>';
+  $destination_store = wc_postnet_delivery_get_order_destination_store($order);
+  if ($destination_store !== null) {
+    echo '<p><strong>' . esc_html__('Destination Store', 'delivery-options-postnet-woocommerce') . ':</strong> ' . esc_html($destination_store['name']) . '</p>';
   }
   
   $waybill_number = get_post_meta($order->get_id(), 'Waybill Number', true);
