@@ -24,6 +24,11 @@ const POSTNET_METHOD_ID_STORE = 'postnet_store';
 const POSTNET_METHOD_ID_EXPRESS = 'postnet_express';
 const POSTNET_METHOD_ID_ECONOMY = 'postnet_economy';
 
+/** Product meta flag: 'yes' when the product can only be collected, never delivered by PostNet */
+const POSTNET_COLLECTION_ONLY_META = '_wc_postnet_collection_only';
+/** Order line item meta key recorded at checkout for collection-only products */
+const POSTNET_COLLECTION_ONLY_ITEM_META = 'Collection only';
+
 require_once plugin_dir_path(__FILE__) . 'includes/rate-calculations.php';
 
 add_action('admin_enqueue_scripts', 'wc_postnet_delivery_enqueue_scripts');
@@ -50,6 +55,12 @@ add_action('wp_ajax_wc_postnet_retry_waybill', 'wc_postnet_delivery_retry_waybil
 add_filter('woocommerce_package_rates', 'wc_postnet_delivery_custom_shipping_methods_logic', 10, 2);
 add_filter('woocommerce_email_classes', 'wc_postnet_delivery_register_waybill_email');
 add_filter('woocommerce_order_shipping_method', 'wc_postnet_delivery_order_shipping_method_with_store', 10, 2);
+// Collection-only products: flagged per product, never delivered by PostNet.
+add_action('woocommerce_product_options_shipping', 'wc_postnet_delivery_product_collection_only_field');
+add_action('woocommerce_admin_process_product_object', 'wc_postnet_delivery_save_product_collection_only');
+add_action('woocommerce_before_add_to_cart_form', 'wc_postnet_delivery_product_collection_only_notice');
+add_filter('woocommerce_get_item_data', 'wc_postnet_delivery_cart_item_collection_only_data', 10, 2);
+add_action('woocommerce_checkout_create_order_line_item', 'wc_postnet_delivery_order_line_item_collection_only', 10, 3);
 
 // Hook for enqueuing scripts
 add_action('wp_enqueue_scripts', 'wc_postnet_delivery_enqueue_frontend_scripts');
@@ -98,6 +109,7 @@ function wc_postnet_delivery_settings_init() {
         'google_api_key' => '',
         'multi_site_mode' => false,
         'waybill_email_enabled' => false,
+        'collection_only_message' => '',
         'collection_addresses' => array(),
         'postnet_shipping_instance_ids' => array()
       )
@@ -368,6 +380,13 @@ function wc_postnet_delivery_options_page() {
               <?php echo esc_html__('Email the customer when a waybill is created', 'delivery-options-postnet-woocommerce'); ?>
             </label>
             <p class="description"><?php echo esc_html__('Sends the waybill number and tracking link to the customer\'s billing email when a waybill is successfully created. The subject and content can be customised under WooCommerce > Settings > Emails > PostNet Waybill Created.', 'delivery-options-postnet-woocommerce'); ?></p>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row"><label for="collection_only_message"><?php echo esc_html__('Collection Only Message', 'delivery-options-postnet-woocommerce'); ?></label></th>
+          <td>
+            <input type="text" name="wc_postnet_delivery_options[collection_only_message]" id="collection_only_message" style="width:100%;max-width:600px;" value="<?php echo esc_attr(isset($options['collection_only_message']) ? $options['collection_only_message'] : ''); ?>" placeholder="<?php echo esc_attr(wc_postnet_delivery_collection_only_default_message()); ?>" />
+            <p class="description"><?php echo esc_html__('Shown to the customer for products marked "Collection only" in the product\'s Shipping tab: on the product page, under the item in the cart and checkout, and on the order, emails and invoice. Such products are left off PostNet waybills and delivery rates. Leave blank for the default wording.', 'delivery-options-postnet-woocommerce'); ?></p>
           </td>
         </tr>
       </table>
@@ -757,6 +776,19 @@ function woocommerce_postnet_delivery_show_shipping_configured_notice() {
 }
 
 function wc_postnet_delivery_custom_shipping_methods_logic($rates, $package) {
+  // A package made up only of collection-only products has nothing PostNet can
+  // deliver, so offer no PostNet option at all (the store's own pickup method,
+  // if any, is left untouched). Checked first to avoid the is-main API call.
+  if (!empty($package['contents']) && !wc_postnet_delivery_package_has_deliverable_items($package)) {
+    foreach (array_keys(wc_postnet_delivery_get_postnet_method_specs()) as $internal_id) {
+      $postnet_rate_id = wc_postnet_delivery_get_postnet_rate_id($internal_id);
+      if ($postnet_rate_id !== null) {
+        unset($rates[$postnet_rate_id]);
+      }
+    }
+    return $rates;
+  }
+
   // Calculate the PostNet fee
   $postal_code = $package['destination']['postcode'];
   $main_check = $postal_code ? json_decode(wc_postnet_fetch_url('https://pnsa.restapis.co.za/public/is-main?postcode='.$postal_code)) : null;
@@ -834,12 +866,15 @@ function wc_postnet_delivery_volumetric_weight($product, $divisor) {
 
 /**
  * Total chargeable weight (kg) for a shipping package: per item max(actual, volumetric) * qty, summed.
+ * Collection-only products are excluded.
  */
 function wc_postnet_delivery_chargeable_weight($package, $divisor) {
   $items = array();
   foreach ($package['contents'] as $values) {
     $product = isset($values['data']) ? $values['data'] : null;
     if (!$product) continue;
+    // Collection-only products never travel with PostNet, so they carry no weight here.
+    if (wc_postnet_delivery_is_collection_only($product)) continue;
     $items[] = array(
       'actual'     => wc_get_weight((float) $product->get_weight(), 'kg'),
       'volumetric' => wc_postnet_delivery_volumetric_weight($product, $divisor),
@@ -1088,6 +1123,202 @@ function wc_postnet_delivery_validations() {
   if ( ! isset($_POST['destination_store']) || empty($_POST['destination_store']) ) {
     wc_add_notice('<strong>Destination Store</strong> is a required field.', 'error' );
   }
+}
+
+/**
+ * Whether a product is collection only (never delivered by PostNet).
+ *
+ * The flag lives on the parent product; variations inherit it.
+ *
+ * @param WC_Product|int $product
+ * @return bool
+ */
+function wc_postnet_delivery_is_collection_only($product) {
+  if (is_numeric($product)) {
+    $product = wc_get_product($product);
+  }
+  if (!($product instanceof WC_Product)) {
+    return false;
+  }
+  if ($product->get_meta(POSTNET_COLLECTION_ONLY_META, true) === 'yes') {
+    return true;
+  }
+  $parent_id = $product->get_parent_id();
+  if ($parent_id) {
+    $parent = wc_get_product($parent_id);
+    return $parent instanceof WC_Product && $parent->get_meta(POSTNET_COLLECTION_ONLY_META, true) === 'yes';
+  }
+  return false;
+}
+
+/**
+ * Whether an order line item is collection only: either it was recorded as
+ * such at checkout, or its product is flagged now.
+ *
+ * @param WC_Order_Item_Product $item
+ * @return bool
+ */
+function wc_postnet_delivery_order_item_is_collection_only($item) {
+  if (!($item instanceof WC_Order_Item_Product)) {
+    return false;
+  }
+  if ($item->get_meta(POSTNET_COLLECTION_ONLY_ITEM_META, true) !== '') {
+    return true;
+  }
+  $product = $item->get_product();
+  return $product ? wc_postnet_delivery_is_collection_only($product) : false;
+}
+
+/**
+ * Whether a shipping package contains at least one line PostNet can deliver.
+ *
+ * @param array $package WooCommerce shipping package (uses 'contents').
+ * @return bool
+ */
+function wc_postnet_delivery_package_has_deliverable_items($package) {
+  if (empty($package['contents']) || !is_array($package['contents'])) {
+    return false;
+  }
+  foreach ($package['contents'] as $values) {
+    $product = isset($values['data']) ? $values['data'] : null;
+    if ($product && !wc_postnet_delivery_is_collection_only($product)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function wc_postnet_delivery_collection_only_default_message() {
+  return __('This item cannot be delivered and must be collected from our store.', 'delivery-options-postnet-woocommerce');
+}
+
+/**
+ * The customer-facing wording for collection-only products, from the settings
+ * page or the default.
+ *
+ * @return string
+ */
+function wc_postnet_delivery_collection_only_message() {
+  $options = get_option('wc_postnet_delivery_options');
+  $message = isset($options['collection_only_message']) ? trim((string) $options['collection_only_message']) : '';
+  if ($message === '') {
+    $message = wc_postnet_delivery_collection_only_default_message();
+  }
+  return apply_filters('wc_postnet_delivery_collection_only_message', $message);
+}
+
+/**
+ * "Collection only" checkbox in the product's Shipping tab.
+ */
+function wc_postnet_delivery_product_collection_only_field() {
+  woocommerce_wp_checkbox(array(
+    'id'          => POSTNET_COLLECTION_ONLY_META,
+    'label'       => __('Collection only', 'delivery-options-postnet-woocommerce'),
+    'description' => __('Cannot be delivered by PostNet. Left off waybills and delivery rates; the customer is told to collect it.', 'delivery-options-postnet-woocommerce'),
+  ));
+}
+
+/**
+ * Save the "Collection only" checkbox. WooCommerce has already verified the
+ * product edit nonce before this action fires.
+ *
+ * @param WC_Product $product
+ */
+function wc_postnet_delivery_save_product_collection_only($product) {
+  // phpcs:ignore WordPress.Security.NonceVerification.Missing
+  $product->update_meta_data(POSTNET_COLLECTION_ONLY_META, isset($_POST[POSTNET_COLLECTION_ONLY_META]) ? 'yes' : 'no');
+}
+
+/**
+ * Notice above the add-to-cart form on a collection-only product page.
+ */
+function wc_postnet_delivery_product_collection_only_notice() {
+  global $product;
+  if (!($product instanceof WC_Product) || !wc_postnet_delivery_is_collection_only($product)) {
+    return;
+  }
+  wc_print_notice(wc_postnet_delivery_collection_only_message(), 'notice');
+}
+
+/**
+ * Show the collection-only wording under the item in the cart and checkout.
+ * WooCommerce uses this filter for the classic templates and the Store API,
+ * so the block cart and checkout show it too.
+ *
+ * @param array $item_data
+ * @param array $cart_item
+ * @return array
+ */
+function wc_postnet_delivery_cart_item_collection_only_data($item_data, $cart_item) {
+  if (!empty($cart_item['data']) && wc_postnet_delivery_is_collection_only($cart_item['data'])) {
+    $item_data[] = array(
+      'key'   => __('Collection only', 'delivery-options-postnet-woocommerce'),
+      'value' => wc_postnet_delivery_collection_only_message(),
+    );
+  }
+  return $item_data;
+}
+
+/**
+ * Record the collection-only wording on the order line item so it shows on
+ * the order details, emails, invoices and the admin order screen, and so the
+ * waybill can leave the line out even if the product flag changes later.
+ *
+ * @param WC_Order_Item_Product $item
+ * @param string                $cart_item_key
+ * @param array                 $values Cart item.
+ */
+function wc_postnet_delivery_order_line_item_collection_only($item, $cart_item_key, $values) {
+  if (!empty($values['data']) && wc_postnet_delivery_is_collection_only($values['data'])) {
+    $item->add_meta_data(POSTNET_COLLECTION_ONLY_ITEM_META, wc_postnet_delivery_collection_only_message(), true);
+  }
+}
+
+/**
+ * Build the waybill's item list, leaving collection-only lines out.
+ *
+ * @param WC_Order $order
+ * @return array {
+ *   @type array $items          Lines to send to PostNet.
+ *   @type array $excluded_names Names of the collection-only lines left out.
+ *   @type float $excluded_total Line totals (incl. tax) of the lines left out.
+ *   @type float $excluded_tax   Tax on the lines left out.
+ * }
+ */
+function wc_postnet_delivery_waybill_order_items($order) {
+  $result = array('items' => array(), 'excluded_names' => array(), 'excluded_total' => 0.0, 'excluded_tax' => 0.0);
+
+  foreach ($order->get_items() as $item) {
+    $product = $item->get_product();
+    $qty = (int) $item->get_quantity();
+    // get_total() is the total for the line, after discounts. The API wants both that
+    // and the per-unit price, so send them explicitly rather than leaving the reader
+    // to guess which one 'price' holds.
+    $line_total = (float) $item->get_total();
+
+    if (wc_postnet_delivery_order_item_is_collection_only($item)) {
+      $result['excluded_names'][] = $item->get_name();
+      $result['excluded_total'] += $line_total + (float) $item->get_total_tax();
+      $result['excluded_tax'] += (float) $item->get_total_tax();
+      continue;
+    }
+
+    $result['items'][] = array(
+      'product_id' => $product ? (string) $product->get_id() : (string) $item->get_product_id(),
+      'description' => $product ? $product->get_name() : $item->get_name(),
+      'qty' => $qty,
+      'price' => $line_total,
+      'unit_price' => $qty > 0 ? $line_total / $qty : $line_total,
+      'line_total' => $line_total,
+      // weight and dimensions are per unit; the API scales weight by qty
+      'weight' => $product ? (float) $product->get_weight() : 0.0,
+      'length' => $product ? (float) $product->get_length() : 0.0,
+      'width' => $product ? (float) $product->get_width() : 0.0,
+      'height' => $product ? (float) $product->get_height() : 0.0,
+    );
+  }
+
+  return $result;
 }
 
 /**
@@ -1505,6 +1736,11 @@ function wc_postnet_delivery_sanitize_options($input) {
 
   // Sanitize waybill email toggle
   $sanitized['waybill_email_enabled'] = isset($input['waybill_email_enabled']) ? boolval($input['waybill_email_enabled']) : false;
+
+  // Sanitize the collection-only customer message (blank means use the default)
+  $sanitized['collection_only_message'] = isset($input['collection_only_message'])
+    ? sanitize_text_field($input['collection_only_message'])
+    : '';
 
   // Sanitize rate mode (global Fixed vs Variable toggle)
   $sanitized['rate_mode'] = (isset($input['rate_mode']) && $input['rate_mode'] === 'variable') ? 'variable' : 'fixed';
@@ -2011,6 +2247,11 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
       return wc_postnet_delivery_record_waybill_failure($order->get_id(), __('PostNet plugin is not configured.', 'delivery-options-postnet-woocommerce'));
     }
     
+    $waybill_items = wc_postnet_delivery_waybill_order_items($order);
+    if (empty($waybill_items['items'])) {
+      return wc_postnet_delivery_record_waybill_failure($order->get_id(), __('Every item on this order is collection only, so there is nothing for PostNet to deliver.', 'delivery-options-postnet-woocommerce'));
+    }
+
     $postal_code = $order->get_shipping_postcode();
     
     $main_check = $postal_code ? json_decode(wc_postnet_fetch_url('https://pnsa.restapis.co.za/public/is-main?postcode='.$postal_code)) : null;
@@ -2117,27 +2358,13 @@ function wc_postnet_delivery_create_waybill($order, $collection_address = null) 
     $data['create_collection'] = true;
   }
   
-  // Get the order items
-  foreach ($order->get_items() as $item_id => $item) {
-    $product = $item->get_product();
-    $qty = (int) $item->get_quantity();
-    // get_total() is the total for the line, after discounts. The API wants both that
-    // and the per-unit price, so send them explicitly rather than leaving the reader
-    // to guess which one 'price' holds.
-    $line_total = (float) $item->get_total();
-    $data['order_items'][] = [
-      'product_id' => (string)$product->get_id(),
-      'description' => $product->get_name(),
-      'qty' => $qty,
-      'price' => $line_total,
-      'unit_price' => $qty > 0 ? $line_total / $qty : $line_total,
-      'line_total' => $line_total,
-      // weight and dimensions are per unit; the API scales weight by qty
-      'weight' => (float) $product->get_weight(),
-      'length' => (float) $product->get_length(),
-      'width' => (float) $product->get_width(),
-      'height' => (float) $product->get_height(),
-    ];
+  // Order items, without collection-only lines. The declared totals are reduced
+  // to match so the waybill describes only what PostNet is carrying.
+  $data['order_items'] = $waybill_items['items'];
+  if (!empty($waybill_items['excluded_names'])) {
+    $data['order_total'] = round(max(0, $data['order_total'] - $waybill_items['excluded_total']), 2);
+    $data['tax_total'] = round(max(0, $data['tax_total'] - $waybill_items['excluded_tax']), 2);
+    error_log('PostNet: order ' . $order->get_id() . ' waybill leaves out collection-only items: ' . implode(', ', $waybill_items['excluded_names']));
   }
   
   // API URL

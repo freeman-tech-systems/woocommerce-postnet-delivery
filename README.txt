@@ -33,6 +33,7 @@ By using this plugin, you agree to PostNet's terms of service and privacy policy
 * Customizable: Modify the shipping methods according to your store's needs.
 * Multi Site Mode: Support for multiple collection addresses with delayed waybill creation until order completion.
 * Waybill Email: Optionally email the customer their waybill number and tracking link when a waybill is created (off by default; enable it on the PostNet Delivery settings page).
+* Collection Only Products: Tick "Collection only" in a product's Shipping tab and it is left off PostNet waybills and delivery rates, and the customer is told on the product page, in the cart and checkout, and on the order that it must be collected from your store.
 
 == Installation ==
 1. Download the plugin zip file from the [releases page](https://github.com/freeman-tech-systems/woocommerce-postnet-delivery/releases).
@@ -89,6 +90,8 @@ When Multi Site Mode is enabled:
 * The "Collect at PostNet" shipping line on invoices, order emails, the order confirmation page and My Account now names the store the customer chose, for example "R 109.00 via Collect at PostNet (EDENVALE)"
 * Existing orders pick this up as well, so re-generating an older invoice shows the store
 * Developers can change the wording with the new wc_postnet_delivery_store_shipping_method_name filter
+* Added a "Collection only" checkbox to the product Shipping tab for products that can never be delivered by PostNet. Such products are left off the waybill and its declared totals, carry no weight in variable-rate calculations, and if a cart holds nothing else the PostNet options are not offered at all
+* Customers see a "Collection only" note for those products on the product page, under the item in the cart and checkout (classic and block), and on the order, its emails and invoices. The wording can be changed with the new "Collection Only Message" setting
 
 = 1.0.19 =
 * Fixed "Error loading stores: Error fetching stores" at checkout whenever the PostNet site was slow: requests used WordPress's 5 second default timeout and failed outright, so a slow spell on PostNet's side became a hard checkout error. The timeout is now 20 seconds
